@@ -38,7 +38,7 @@ var (
 type AppConfig struct {
 	AutoReplay_PrivateChat     string //私聊自动回复
 	AutoReplay_KeyFilter       string //屏蔽关键词
-	AutoReplay_FunctionKey     string //功能关键词
+	AutoReplay_FunKey          string //调戏功能关键词
 	AutoReplay_PrivateFunction string //私人功能定义
 }
 
@@ -52,7 +52,7 @@ func init() {
 	conf := goini.SetConfig("./app.conf")
 	appConfig.AutoReplay_PrivateChat = conf.GetValue("chat", "PrivateChat")
 	appConfig.AutoReplay_KeyFilter = conf.GetValue("chat", "KeyFilter")
-	appConfig.AutoReplay_FunctionKey = conf.GetValue("chat", "FunctionKey")
+	appConfig.AutoReplay_FunKey = conf.GetValue("chat", "FunKey")
 	appConfig.AutoReplay_PrivateFunction = conf.GetValue("chat", "PrivateFunction")
 	UserInfoList = make(map[string]string)
 }
@@ -77,6 +77,8 @@ func AI(q string) string {
 
 func main() {
 	var cmd *exec.Cmd
+	var Message string
+	var EchoMessage string
 
 	// 从微信服务器获取UUID
 	uuid, err = s.GetUUIDFromWX()
@@ -181,7 +183,11 @@ func main() {
 
 			for i := 0; i < wxRecvMsges.MsgCount; i++ {
 				if wxRecvMsges.MsgList[i].MsgType == 1 { // 普通文本消息
-					Message := getMessage(wxRecvMsges.MsgList[i].Content, wxRecvMsges.MsgList[i].FromUserName)
+					if regGroup.MatchString(wxRecvMsges.MsgList[i].FromUserName) {
+						Message = getMessage(wxRecvMsges.MsgList[i].Content, wxRecvMsges.MsgList[i].FromUserName)
+					} else {
+						Message = wxRecvMsges.MsgList[i].Content
+					}
 					fmt.Println(contactMap[wxRecvMsges.MsgList[i].FromUserName].NickName, ":", Message)
 					if regGroup.MatchString(wxRecvMsges.MsgList[i].FromUserName) && regAt.MatchString(wxRecvMsges.MsgList[i].Content) {
 						// 有人在群里@我，发个消息回答一下
@@ -195,6 +201,7 @@ func main() {
 
 						time.Sleep(time.Second) // 加点延时，避免消息次序混乱，同时避免微信侦察到机器人
 						go s.SendMsg(&loginMap, wxSendMsg)
+						EchoMessage = wxSendMsg.Content
 					} else if !regGroup.MatchString(wxRecvMsges.MsgList[i].FromUserName) { //不在群里
 						if regAd.MatchString(wxRecvMsges.MsgList[i].Content) {
 							// 有人私聊我，并且内容含有「朋友圈」、「点赞」等敏感词，则回复
@@ -208,8 +215,9 @@ func main() {
 
 							time.Sleep(time.Second)
 							go s.SendMsg(&loginMap, wxSendMsg)
-						} else if strings.EqualFold(wxRecvMsges.MsgList[i].Content, appConfig.AutoReplay_FunctionKey) {
-							// 有人私聊我，并且内容是密语，输出加群菜单
+							EchoMessage = wxSendMsg.Content
+						} else if strings.EqualFold(wxRecvMsges.MsgList[i].Content, appConfig.AutoReplay_FunKey) {
+							// 有人私聊我，开启调戏功能
 							wxSendMsg := m.WxSendMsg{}
 							wxSendMsg.Type = 1
 							wxSendMsg.FromUserName = wxRecvMsges.MsgList[i].ToUserName
@@ -226,6 +234,7 @@ func main() {
 
 							time.Sleep(time.Second)
 							go s.SendMsg(&loginMap, wxSendMsg)
+							EchoMessage = wxSendMsg.Content
 						} else if AdminID == wxRecvMsges.MsgList[i].FromUserName { //已进入管理员模式
 							wxSendMsg := m.WxSendMsg{}
 							wxSendMsg.Type = 1
@@ -237,6 +246,7 @@ func main() {
 
 							time.Sleep(time.Second)
 							go s.SendMsg(&loginMap, wxSendMsg)
+							EchoMessage = wxSendMsg.Content
 						}
 
 					}
@@ -254,6 +264,11 @@ func main() {
 					fmt.Println(contactMap[wxRecvMsges.MsgList[i].FromUserName].NickName, ": ", strings.Replace(wxRecvMsges.MsgList[i].Content, ":<br/>", ": ", -1), " 撤回了一条消息")
 				} else {
 					fmt.Println(wxRecvMsges.MsgList[i].MsgType, contactMap[wxRecvMsges.MsgList[i].FromUserName].NickName+":", wxRecvMsges.MsgList[i].Content)
+				}
+
+				if EchoMessage != "" { //显示回复信息
+					fmt.Println("我的回复：", EchoMessage)
+					EchoMessage = ""
 				}
 			}
 		}
