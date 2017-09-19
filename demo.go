@@ -3,11 +3,6 @@
 开发：Ease
 时间：2017-9-3
 修改：2017-9-19
-待开发：1. 功能放到MT7688上，在显示屏上显示二维码用于扫描，信息显示到屏幕上
-        2. 主动发言
-        3. 私人功能
-        4. 自动关闭弹出的二维码(Win平台下尚未成功)
-        5. 获取微信群名字
 */
 
 package main
@@ -15,11 +10,11 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	e "github.com/soease/wx4go/enum"
+	m "github.com/soease/wx4go/model"
+	s "github.com/soease/wx4go/service"
 	"github.com/widuu/goini"
 	"io/ioutil"
-	e "itchat4go/enum"
-	m "itchat4go/model"
-	s "itchat4go/service"
 	"net/http"
 	"os"
 	"os/exec"

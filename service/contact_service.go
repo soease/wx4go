@@ -3,10 +3,10 @@ package service
 import (
 	"encoding/json"
 	"fmt"
+	e "github.com/soease/wx4go/enum"
+	m "github.com/soease/wx4go/model"
+	t "github.com/soease/wx4go/tools"
 	"io/ioutil"
-	e "itchat4go/enum"
-	m "itchat4go/model"
-	t "itchat4go/tools"
 	"net/http"
 	"net/url"
 	"regexp"
