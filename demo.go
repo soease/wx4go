@@ -10,6 +10,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/op/go-logging"
 	e "github.com/soease/wx4go/enum"
 	m "github.com/soease/wx4go/model"
 	s "github.com/soease/wx4go/service"
@@ -33,6 +34,8 @@ var (
 	appConfig    AppConfig           //系统配置
 	AdminID      string              //进入管理员帐号
 	UserInfoList map[string]string   //把用户信息存起来
+	log          = logging.MustGetLogger("example")
+	format       = logging.MustStringFormatter(`%{color}%{time:2006-01-02 15:04:05} [%{level:.4s}] %{id:03x}%{color:reset} %{message}`)
 )
 
 type AppConfig struct {
@@ -49,6 +52,12 @@ type InfoRet struct {
 
 // 读取配置文件
 func init() {
+	// 日志输出及格式
+	backend := logging.NewLogBackend(os.Stderr, "", 0)
+	backendFormatter := logging.NewBackendFormatter(backend, format)
+	logging.SetBackend(backendFormatter)
+
+	//系统配置
 	conf := goini.SetConfig("./app.conf")
 	appConfig.AutoReplay_PrivateChat = conf.GetValue("chat", "PrivateChat")
 	appConfig.AutoReplay_KeyFilter = conf.GetValue("chat", "KeyFilter")
@@ -73,6 +82,21 @@ func AI(q string) string {
 			return strings.Replace(atr.Content, "{br}", "\n", -1)
 		}
 	}
+}
+
+// 聊天
+func Chat(logMap *m.LoginMap, chatType int, FromUser, ToUser, Content string) string {
+	wxSendMsg := m.WxSendMsg{}
+	wxSendMsg.Type = chatType
+	wxSendMsg.Content = Content
+	wxSendMsg.FromUserName = FromUser
+	wxSendMsg.ToUserName = ToUser
+	wxSendMsg.LocalID = fmt.Sprintf("%d", time.Now().Unix())
+	wxSendMsg.ClientMsgId = wxSendMsg.LocalID
+
+	time.Sleep(time.Second)
+	go s.SendMsg(logMap, wxSendMsg)
+	return wxSendMsg.Content
 }
 
 func main() {
@@ -100,49 +124,47 @@ func main() {
 
 	// 轮询服务器判断二维码是否扫过暨是否登陆了
 	for {
-		fmt.Println("正在验证登陆... ...")
+		log.Info("正在验证登陆... ...")
 		status, msg := s.CheckLogin(uuid)
 
 		if status == 200 {
-			fmt.Println("登陆成功,处理登陆信息...")
+			log.Info("登陆成功,处理登陆信息...")
 			loginMap, err = s.ProcessLoginInfo(msg)
 			if err != nil {
 				panicErr(err)
 			}
 
-			fmt.Println("登陆信息处理完毕,正在初始化微信....")
+			log.Info("登陆信息处理完毕,正在初始化微信....")
 			err = s.InitWX(&loginMap)
 			if err != nil {
 				panicErr(err)
 			}
 
-			fmt.Println("初始化完毕,通知微信服务器登陆状态变更...")
+			log.Info("初始化完毕,通知微信服务器登陆状态变更...")
 			err = s.NotifyStatus(&loginMap)
 			if err != nil {
 				panicErr(err)
 			}
 
-			fmt.Println("通知完毕,本次登陆信息：")
-			fmt.Println(e.SKey + ": " + loginMap.BaseRequest.SKey)
-			fmt.Println(e.PassTicket + ": " + loginMap.PassTicket)
+			log.Debug("通知完毕,登陆信息：", e.SKey+": "+loginMap.BaseRequest.SKey, " ", e.PassTicket+": "+loginMap.PassTicket)
 			break
 		} else if status == 201 {
-			fmt.Println("请在手机上确认")
+			log.Notice("请在手机上确认")
 		} else if status == 408 {
-			fmt.Println("请扫描二维码")
+			log.Notice("请扫描二维码")
 		} else {
-			fmt.Println(msg)
+			log.Notice(msg)
 		}
 	}
 
 	cmd.Process.Kill() //关闭显示的二维码图（Win下未生效）
 
-	fmt.Println("开始获取联系人信息...")
+	log.Info("开始获取联系人信息...")
 	contactMap, err = s.GetAllContact(&loginMap)
 	if err != nil {
 		panicErr(err)
 	}
-	fmt.Printf("成功获取 %d个 联系人信息,开始整理群组信息...\n", len(contactMap))
+	log.Info(fmt.Sprintf("成功获取 %d个 联系人信息,开始整理群组信息...", len(contactMap)))
 
 	//fmt.Println(contactMap)
 	groupMap = s.MapGroupInfo(contactMap)
@@ -150,15 +172,15 @@ func main() {
 	for _, v := range groupMap {
 		groupSize += len(v)
 	}
-	fmt.Printf("整理完毕，共有 %d个 群组是焦点群组，它们是：\n", groupSize)
-	for key, v := range groupMap {
-		fmt.Println(key)
+	log.Info(fmt.Sprintf("整理完毕，共有 %d个 群组是焦点群组，它们是：\n", groupSize))
+	for _, v := range groupMap {
+		//fmt.Println(key)
 		for _, user := range v {
-			fmt.Println("========>" + user.NickName)
+			log.Info("========>" + user.NickName)
 		}
 	}
 
-	fmt.Println("开始监听消息响应...")
+	log.Info("开始监听消息响应...")
 	var retcode, selector int64
 	regAt := regexp.MustCompile(`^@.*@.*(易云辉|ease).*$`) // 群聊时其他人说话时会在前面加上@XXX
 	regGroup := regexp.MustCompile(`^@@.+`)
@@ -167,10 +189,10 @@ func main() {
 	for {
 		retcode, selector, err = s.SyncCheck(&loginMap)
 		if err != nil {
-			fmt.Println(retcode, selector)
+			log.Error(retcode, selector)
 			printErr(err)
 			if retcode == 1101 {
-				fmt.Println("帐号已在其他地方登陆，程序将退出。")
+				log.Error("帐号已在其他地方登陆，程序将退出。")
 				os.Exit(2)
 			}
 			continue
@@ -188,76 +210,38 @@ func main() {
 					} else {
 						Message = wxRecvMsges.MsgList[i].Content
 					}
-					fmt.Println(contactMap[wxRecvMsges.MsgList[i].FromUserName].NickName, ":", Message)
+					log.Info(contactMap[wxRecvMsges.MsgList[i].FromUserName].NickName, ":", Message)
 					if regGroup.MatchString(wxRecvMsges.MsgList[i].FromUserName) && regAt.MatchString(wxRecvMsges.MsgList[i].Content) {
 						// 有人在群里@我，发个消息回答一下
-						wxSendMsg := m.WxSendMsg{}
-						wxSendMsg.Type = 1
-						wxSendMsg.Content = appConfig.AutoReplay_PrivateChat
-						wxSendMsg.FromUserName = wxRecvMsges.MsgList[i].ToUserName
-						wxSendMsg.ToUserName = wxRecvMsges.MsgList[i].FromUserName
-						wxSendMsg.LocalID = fmt.Sprintf("%d", time.Now().Unix())
-						wxSendMsg.ClientMsgId = wxSendMsg.LocalID
-
-						time.Sleep(time.Second) // 加点延时，避免消息次序混乱，同时避免微信侦察到机器人
-						go s.SendMsg(&loginMap, wxSendMsg)
-						EchoMessage = wxSendMsg.Content
+						EchoMessage = Chat(&loginMap, 1, wxRecvMsges.MsgList[i].ToUserName, wxRecvMsges.MsgList[i].FromUserName, appConfig.AutoReplay_PrivateChat)
 					} else if !regGroup.MatchString(wxRecvMsges.MsgList[i].FromUserName) { //不在群里
 						if regAd.MatchString(wxRecvMsges.MsgList[i].Content) {
 							// 有人私聊我，并且内容含有「朋友圈」、「点赞」等敏感词，则回复
-							wxSendMsg := m.WxSendMsg{}
-							wxSendMsg.Type = 1
-							wxSendMsg.Content = appConfig.AutoReplay_KeyFilter
-							wxSendMsg.FromUserName = wxRecvMsges.MsgList[i].ToUserName
-							wxSendMsg.ToUserName = wxRecvMsges.MsgList[i].FromUserName
-							wxSendMsg.LocalID = fmt.Sprintf("%d", time.Now().Unix())
-							wxSendMsg.ClientMsgId = wxSendMsg.LocalID
-
-							time.Sleep(time.Second)
-							go s.SendMsg(&loginMap, wxSendMsg)
-							EchoMessage = wxSendMsg.Content
+							EchoMessage = Chat(&loginMap, 1, wxRecvMsges.MsgList[i].ToUserName, wxRecvMsges.MsgList[i].FromUserName, appConfig.AutoReplay_KeyFilter)
 						} else if strings.EqualFold(wxRecvMsges.MsgList[i].Content, appConfig.AutoReplay_FunKey) {
 							// 有人私聊我，开启调戏功能
-							wxSendMsg := m.WxSendMsg{}
-							wxSendMsg.Type = 1
-							wxSendMsg.FromUserName = wxRecvMsges.MsgList[i].ToUserName
-							wxSendMsg.ToUserName = wxRecvMsges.MsgList[i].FromUserName
-							wxSendMsg.LocalID = fmt.Sprintf("%d", time.Now().Unix())
-							wxSendMsg.ClientMsgId = wxSendMsg.LocalID
 							if AdminID == "" {
-								wxSendMsg.Content = fmt.Sprintf(appConfig.AutoReplay_PrivateFunction, "进入")
-								AdminID = wxRecvMsges.MsgList[i].FromUserName //设置为管理员
+								EchoMessage = fmt.Sprintf(appConfig.AutoReplay_PrivateFunction, "进入")
+								AdminID = wxRecvMsges.MsgList[i].FromUserName //设置为调戏开启用户
 							} else {
-								wxSendMsg.Content = fmt.Sprintf(appConfig.AutoReplay_PrivateFunction, "退出")
+								EchoMessage = fmt.Sprintf(appConfig.AutoReplay_PrivateFunction, "退出")
 								AdminID = ""
 							}
 
-							time.Sleep(time.Second)
-							go s.SendMsg(&loginMap, wxSendMsg)
-							EchoMessage = wxSendMsg.Content
-						} else if AdminID == wxRecvMsges.MsgList[i].FromUserName { //已进入管理员模式
-							wxSendMsg := m.WxSendMsg{}
-							wxSendMsg.Type = 1
-							wxSendMsg.FromUserName = wxRecvMsges.MsgList[i].ToUserName
-							wxSendMsg.ToUserName = wxRecvMsges.MsgList[i].FromUserName
-							wxSendMsg.LocalID = fmt.Sprintf("%d", time.Now().Unix())
-							wxSendMsg.ClientMsgId = wxSendMsg.LocalID
-							wxSendMsg.Content = AI(wxRecvMsges.MsgList[i].Content)
-
-							time.Sleep(time.Second)
-							go s.SendMsg(&loginMap, wxSendMsg)
-							EchoMessage = wxSendMsg.Content
+							EchoMessage = Chat(&loginMap, 1, wxRecvMsges.MsgList[i].ToUserName, wxRecvMsges.MsgList[i].FromUserName, EchoMessage)
+						} else if AdminID == wxRecvMsges.MsgList[i].FromUserName { //已进入调戏模式
+							EchoMessage = Chat(&loginMap, 1, wxRecvMsges.MsgList[i].ToUserName, wxRecvMsges.MsgList[i].FromUserName, AI(wxRecvMsges.MsgList[i].Content))
 						}
 
 					}
 				} else if wxRecvMsges.MsgList[i].MsgType == 3 {
-					fmt.Println(contactMap[wxRecvMsges.MsgList[i].FromUserName].NickName, ": ", strings.Split(wxRecvMsges.MsgList[i].Content, ":<br/>")[0]+": 发了一张图片")
+					log.Info(contactMap[wxRecvMsges.MsgList[i].FromUserName].NickName, ": ", strings.Split(wxRecvMsges.MsgList[i].Content, ":<br/>")[0]+": 发了一张图片")
 				} else if wxRecvMsges.MsgList[i].MsgType == 34 {
-					fmt.Println(contactMap[wxRecvMsges.MsgList[i].FromUserName].NickName, ": ", strings.Split(wxRecvMsges.MsgList[i].Content, ":<br/>")[0]+": 发了一个语音信息")
+					log.Info(contactMap[wxRecvMsges.MsgList[i].FromUserName].NickName, ": ", strings.Split(wxRecvMsges.MsgList[i].Content, ":<br/>")[0]+": 发了一个语音信息")
 				} else if wxRecvMsges.MsgList[i].MsgType == 49 {
-					fmt.Println(contactMap[wxRecvMsges.MsgList[i].FromUserName].NickName, ": ", strings.Replace(wxRecvMsges.MsgList[i].Content, ":<br/>", ": ", -1), " 发了一条普通链接或应用分享消息")
+					log.Info(contactMap[wxRecvMsges.MsgList[i].FromUserName].NickName, ": ", strings.Replace(wxRecvMsges.MsgList[i].Content, ":<br/>", ": ", -1), " 发了一条普通链接或应用分享消息")
 				} else if wxRecvMsges.MsgList[i].MsgType == 51 {
-					fmt.Println(contactMap[wxRecvMsges.MsgList[i].FromUserName].NickName, ": 主人进入微信群")
+					log.Info(contactMap[wxRecvMsges.MsgList[i].FromUserName].NickName, ": 主人进入微信群")
 				} else if wxRecvMsges.MsgList[i].MsgType == 10000 {
 					fmt.Println(contactMap[wxRecvMsges.MsgList[i].FromUserName].NickName, ": ", strings.Replace(wxRecvMsges.MsgList[i].Content, ":<br/>", ": ", -1), " 有人发红包吗？")
 				} else if wxRecvMsges.MsgList[i].MsgType == 10002 {
@@ -267,7 +251,7 @@ func main() {
 				}
 
 				if EchoMessage != "" { //显示回复信息
-					fmt.Println("我的回复：", EchoMessage)
+					log.Info("我的回复：", EchoMessage)
 					EchoMessage = ""
 				}
 			}
@@ -300,6 +284,6 @@ func panicErr(err error) {
 
 func printErr(err error) {
 	if err != nil {
-		fmt.Println(err)
+		log.Error(err)
 	}
 }
