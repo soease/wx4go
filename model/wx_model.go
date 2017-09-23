@@ -128,6 +128,7 @@ type UserInfo struct {
 	ContactList []Contact    `json:"ContactList"`
 }
 
+//用户信息
 type Contact struct {
 	Uin              int      `json:"Uin"`
 	UserName         string   `json:"UserName"`
@@ -165,4 +166,255 @@ type Contact struct {
 type BaseResponse struct {
 	Ret     int    `json:"Ret"`
 	Message string `json:"ErrMsg"`
+}
+
+//图文信息
+/*
+ <msg>
+     <appmsg appid="" sdkver="0">
+             <title><![CDATA[惊呆了！动动手指，就能免费领走百兆流量及超值大礼！]]></title>
+			 <des><![CDATA[流量任性送，大礼随性兑！]]></des>
+			 <action></action>
+			 <type>5</type>
+			 <showtype>1</showtype>
+			 <content><![CDATA[]]></content>
+			 <contentattr>0</contentattr>
+             <url><![CDATA[http://mp.weixin.qq.com/s?__biz=MjM5MjUzODk0MA==&amp;mid=2653382533&amp;idx=1&amp;sn=b573add6e281c01c15f40a8f7d338718&amp;chksm=bd770fd68a0086c03ab113f81c830c9825e2cc0025caaa6517112da9787b1e529e07714a9b80&amp;scene=0#rd]]></url>
+             <lowurl><![CDATA[]]></lowurl>
+             <appattach>
+                <totallen>0</totallen>
+                <attachid></attachid>
+                <fileext></fileext>
+             </appattach>
+             <extinfo></extinfo>
+             <mmreader>
+                 <category type="20" count="5">
+                      <name><![CDATA[建设银行四川省分行]]></name>
+                      <topnew>
+                          <cover><![CDATA[http://mmbiz.qpic.cn/mmbiz_jpg/Tz4w2jickxxALcWmE0n5fwiazibUgbPsZBOCrYIYibtosMnicNw5MuCb5G4OM9ibzJPSH3VmSJ4ZfEVrnWvCYaMbYIgg/640?wxtype=jpeg&amp;wxfrom=0]]></cover>
+                          <width>0</width>
+                          <height>0</height>
+                          <digest><![CDATA[]]></digest>
+                      </topnew>
+                      <item>
+                          <itemshowtype>0</itemshowtype>
+                          <title><![CDATA[惊呆了！动动手指，就能免费领走百兆流量及超值大礼！]]></title>
+                          <url><![CDATA[http://mp.weixin.qq.com/s?__biz=MjM5MjUzODk0MA==&amp;mid=2653382533&amp;idx=1&amp;sn=b573add6e281c01c15f40a8f7d338718&amp;chksm=bd770fd68a0086c03ab113f81c830c9825e2cc0025caaa6517112da9787b1e529e07714a9b80&amp;scene=0#rd]]></url>
+                          <shorturl><![CDATA[]]></shorturl>
+                          <longurl><![CDATA[]]></longurl>
+                          <pub_time>1505883109</pub_time>
+                          <cover><![CDATA[http://mmbiz.qpic.cn/mmbiz_jpg/Tz4w2jickxxALcWmE0n5fwiazibUgbPsZBOCrYIYibtosMnicNw5MuCb5G4OM9ibzJPSH3VmSJ4ZfEVrnWvCYaMbYIgg/640?wxtype=jpeg&amp;wxfrom=0]]></cover>
+                          <tweetid></tweetid>
+                          <digest><![CDATA[流量任性送，大礼随性兑！]]></digest>
+                          <fileid>505898884</fileid>
+                          <sources>
+                              <source>
+                                   <name><![CDATA[建设银行四川省分行]]></name>
+                              </source>
+                          </sources>
+                          <styles></styles>
+                          <native_url></native_url>
+						  <del_flag>0</del_flag>
+						  <contentattr>0</contentattr>
+						  <play_length>0</play_length>
+                      </item>
+                      <item>
+                          <itemshowtype>0</itemshowtype>
+                          <title><![CDATA[信用卡 约定账户自动扣款，一切就这么简单]]></title>
+                          <url><![CDATA[http://mp.weixin.qq.com/s?__biz=MjM5MjUzODk0MA==&amp;mid=2653382533&amp;idx=2&amp;sn=3c2060cf622b5c45854b6ff311b044dc&amp;chksm=bd770fd68a0086c0ff91271d2621c52eae00cf24090c16f252f5eb2603847f2c3c66e8b7b12b&amp;scene=0#rd]]></url>
+                          <shorturl><![CDATA[]]></shorturl>
+                          <longurl><![CDATA[]]></longurl>
+                          <pub_time>1505883109</pub_time>
+                          <cover><![CDATA[http://mmbiz.qpic.cn/mmbiz_jpg/Tz4w2jickxxALcWmE0n5fwiazibUgbPsZBOeRDTKjhVYg31OMP6TFGrOMFsmRGQnZzxLFtL6ibjwL5JktbfYK1j4hg/300?wxtype=jpeg&amp;wxfrom=0]]></cover>
+                          <tweetid></tweetid>
+                          <digest><![CDATA[约定账户还款，就是这么便捷！]]></digest>
+                          <fileid>505898865</fileid>
+                          <sources>
+                             <source>
+                                <name><![CDATA[建设银行四川省分行]]></name>
+                             </source>
+                          </sources>
+                          <styles></styles>
+                          <native_url></native_url>
+                          <del_flag>0</del_flag>
+                          <contentattr>0</contentattr>
+                          <play_length>0</play_length>
+                      </item>
+                      <item>
+                          <itemshowtype>0</itemshowtype>
+                          <title><![CDATA[【金普月】长知识——原来你是这样的人民币]]></title>
+                          <url><![CDATA[http://mp.weixin.qq.com/s?__biz=MjM5MjUzODk0MA==&amp;mid=2653382533&amp;idx=3&amp;sn=647861eb51d8b0dfcb4c2b88ef3dc478&amp;chksm=bd770fd68a0086c0080bbbdf245d387d4a733228dd6db40f80b4fb91b77ccd988e957999c2ba&amp;scene=0#rd]]></url>
+                          <shorturl><![CDATA[]]></shorturl>
+                          <longurl><![CDATA[]]></longurl>
+                          <pub_time>1505883109</pub_time>
+                          <cover><![CDATA[http://mmbiz.qpic.cn/mmbiz_jpg/Tz4w2jickxxALcWmE0n5fwiazibUgbPsZBOPTaEPuPVeRCDdrC5ib2ClJt9xXia8gRCnrbV2f5Mbk8RLOXQgibRV0C4Q/300?wxtype=jpeg&amp;wxfrom=0]]></cover>
+                          <tweetid></tweetid>
+                          <digest><![CDATA[用心了解一下我吧，我的名字叫人民币。]]></digest>
+                          <fileid>505898868</fileid>
+                          <sources>
+                              <source>
+                                  <name><![CDATA[建设银行四川省分行]]></name>
+                              </source>
+                          </sources>
+                          <styles></styles>
+                          <native_url></native_url>
+                          <del_flag>0</del_flag>
+                          <contentattr>0</contentattr>
+                          <play_length>0</play_length>
+                      </item>
+                 </category>
+                 <publisher>
+                    <username><![CDATA[gh_ad399acfadb9]]></username>
+                    <nickname><![CDATA[建设银行四川省分行]]></nickname>
+                 </publisher>
+                 <template_header></template_header>
+                 <template_detail></template_detail>
+                 <forbid_forward>0</forbid_forward>
+             </mmreader>
+             <thumburl><![CDATA[http://mmbiz.qpic.cn/mmbiz_jpg/Tz4w2jickxxALcWmE0n5fwiazibUgbPsZBOCrYIYibtosMnicNw5MuCb5G4OM9ibzJPSH3VmSJ4ZfEVrnWvCYaMbYIgg/640?wxtype=jpeg&amp;wxfrom=0]]></thumburl>
+     </appmsg>
+     <fromusername><![CDATA[gh_ad399acfadb9]]></fromusername>
+     <appinfo>
+         <version></version>
+         <appname><![CDATA[建设银行四川省分行]]></appname>
+         <isforceupdate>1</isforceupdate>
+     </appinfo>
+ </msg>
+*/
+
+//图文信息
+type PicTxtInfo struct {
+	XMLName      xml.Name           `xml:"msg"` /* 根节点定义 */
+	AppMsg       PicTxtInfo_AppMsg  `xml:"appmsg"`
+	FromUserName string             `xml:"fromusername"`
+	AppInfo      PicTxtInfo_AppInfo `xml:"appinfo"`
+}
+
+type PicTxtInfo_AppMsg struct {
+	Title     string              `xml:"title"`
+	Desc      string              `xml:"des"`
+	Action    string              `xml:"action"`
+	Type      int                 `xml:"type"`
+	ShowType  int                 `xml:"showtype"`
+	Content   string              `xml:"content"`
+	Url       string              `xml:"url"`
+	LowUrl    string              `xml:"lowurl"`
+	AppAttach string              `xml:"appattach"`
+	ExtInfo   string              `xml:"extinfo"`
+	MMReader  PicTxtInfo_MMReader `xml:"mmreader"`
+}
+
+type PicTxtInfo_MMReader struct {
+	Category       string               `xml:"category"` //这个还没完成
+	Publisher      PicTxtInfo_Publisher `xml:"publisher"`
+	TemplateHeader string               `xml:"template_header"`
+	TemplateDetail string               `xml:"template_detail"`
+	ForbidForward  int                  `xml:"forbid_forward"`
+}
+
+type PicTxtInfo_Publisher struct {
+	UserName string `xml:"username"`
+	NickName string `xml:"nickname"`
+}
+
+type PicTxtInfo_AppInfo struct {
+	Version     string `xml:"version"`
+	AppName     string `xml:"appname"`
+	ForceUpdate int    `xml:"isforceupdate"`
+}
+
+type PicTxtInfo_Item struct {
+}
+
+//视频信息
+/*
+<?xml version="1.0"?>
+<msg>
+     <videomsg aeskey="f08b0a7edbba4dae9efc9f5c80a60223"
+               cdnthumbaeskey="f08b0a7edbba4dae9efc9f5c80a60223"
+               cdnvideourl="30500201000449304702010002042ac5cbcf02032dcd010204390a96b6020459c1f30c0422373236323639303035304063686174726f6f6d323731315f313530353838323839320204010800040201000400"
+               cdnthumburl="30500201000449304702010002042ac5cbcf02032dcd010204390a96b6020459c1f30c0422373236323639303035304063686174726f6f6d323731315f313530353838323839320204010800040201000400"
+               length="1065951"
+               playlength="10"
+               cdnthumblength="9507"
+               cdnthumbwidth="176"
+               cdnthumbheight="320"
+               fromusername="wxid_x6ny9w9bvgo422"
+               md5="9e703a36878eb9a8f4c949c03227376d"
+               newmd5="07ffa2560fec17da55706d4ecdb32688"
+               isad="0" />
+</msg>
+*/
+
+type VideoInfo struct {
+}
+
+//表情信息
+/*
+<msg>
+  <emoji fromusername="gain_8884495"
+         tousername="1030168696@chatroom"
+         type="1"
+         idbuffer="media:0_0"
+         md5="d4f697ebb9e00d22390faa922efd0924"
+         len="18384"
+         productid=""
+         androidmd5="d4f697ebb9e00d22390faa922efd0924"
+         androidlen="18384"
+         s60v3md5="d4f697ebb9e00d22390faa922efd0924"
+         s60v3len="18384"
+         s60v5md5="d4f697ebb9e00d22390faa922efd0924"
+         s60v5len="18384"
+         cdnurl="http://emoji.qpic.cn/wx_emoji/g1MVz8aKUGHMNXuXJ5ylBbBGAMib7abvJjjMMmnQicukHc29m88N7R2w/"
+         designerid=""
+         thumburl=""
+         encrypturl="http://emoji.qpic.cn/wx_emoji/JPeZw4ufGRibMA6QF23JIa0NRpn8WYljhKwo1fu51eYLLyNmOokRZAA/"
+         aeskey="a68cee7ec1ec28a7f36d4bdbf1c4e4ac"
+         externurl="http://emoji.qpic.cn/wx_emoji/fQYHtIzNCmQM66lkuQU172xtrk6mZFANCjb6ic61mL483ftXwbZuNOtWcTGVYLh5p/"
+         externmd5="38abe9cbe59fb7b8257247de3067ef8d"
+         width="200"
+         height="70">
+  </emoji>
+</msg>
+*/
+
+type EmojiInfo struct {
+	XMLName xml.Name        `xml:"msg"` /* 根节点定义 */
+	Emoji   EmojiInfo_Emoji `xml:"emoji"`
+}
+
+type EmojiInfo_Emoji struct {
+	Url string `xml:"cdnurl,attr"`
+}
+
+//图片信息
+/*
+<msg>
+    <img aeskey="550c6c62c07f4efc8cc27559f8310f0c"
+    encryver="0"
+    cdnthumbaeskey="550c6c62c07f4efc8cc27559f8310f0c"
+    cdnthumburl="305002010004493047020100020413621d0b02030f488102044bb78cb6020459c20d790425617570696d675f303564343639326234303065613639345f313530353838393635353937330201000201000400"
+    cdnthumblength="16994"
+    cdnthumbheight="120"
+    cdnthumbwidth="120"
+    cdnmidheight="0"
+    cdnmidwidth="0"
+    cdnhdheight="0"
+    cdnhdwidth="0"
+    cdnmidimgurl="305002010004493047020100020413621d0b02030f488102044bb78cb6020459c20d790425617570696d675f303564343639326234303065613639345f313530353838393635353937330201000201000400"
+    length="80973"
+    cdnbigimgurl="305002010004493047020100020413621d0b02030f488102044bb78cb6020459c20d790425617570696d675f303564343639326234303065613639345f313530353838393635353937330201000201000400"
+    hdlength="81223"
+    md5="fd3cbc3f0706073a124fcbe45cf74321" />
+</msg>
+*/
+
+type PicInfo struct {
+	XMLName xml.Name    `xml:"msg"` /* 根节点定义 */
+	Image   PicInfo_Img `xml:"img"`
+}
+
+type PicInfo_Img struct {
+	Url string `xml:"cdnthumburl,attr"`
+	Key string `xml:"cdnthumbaeskey,attr"`
 }

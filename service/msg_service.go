@@ -57,9 +57,7 @@ func SyncCheck(loginMap *m.LoginMap) (int64, int64, error) {
 	jar := new(m.Jar)
 	jar.SetCookies(u, loginMap.Cookies)
 
-	client := &http.Client{
-		Jar:     jar,
-		Timeout: timeout}
+	client := &http.Client{Jar: jar, Timeout: timeout}
 
 	resp, err := client.Get(e.SYNC_CHECK_URL + t.GetURLParams(urlMap))
 	if err != nil {

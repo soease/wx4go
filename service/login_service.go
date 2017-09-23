@@ -194,6 +194,8 @@ func InitWX(loginMap *m.LoginMap) error {
 	if initInfo.SyncKeys.Count < 1 {
 		fmt.Println(string(bodyBytes))
 		return errors.New("微信返回的数据有误")
+	} else {
+		//fmt.Println(string(bodyBytes))
 	}
 	loginMap.SyncKeys = initInfo.SyncKeys
 	loginMap.SyncKeyStr = initInfo.SyncKeys.ToString()

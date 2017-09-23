@@ -16,8 +16,6 @@ const (
 	GET_GROUP_USERINFO        = API_BASE_URL + "/webwxbatchgetcontact"  //
 
 	SYNC_CHECK_URL = "https://webpush.wx.qq.com/cgi-bin/mmwebwx-bin/synccheck" /* 检查心跳URL */
-)
 
-const (
 	JSON_HEADER = "application/json;charset=UTF-8"
 )
