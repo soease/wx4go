@@ -55,6 +55,7 @@ type User struct {
 	Sex        int8   `json:"Sex"`
 	Province   string `json:"Province"`
 	City       string `json:"City"`
+	VerifyFlag int8   `json:"VerifyFlag"`
 }
 
 type SyncKeysJsonData struct {

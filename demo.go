@@ -84,8 +84,7 @@ func main() {
 		loginMap     m.LoginMap
 		uuid         string
 		contactMap   map[string]m.User
-		groupMap     map[string][]m.User // 关键字为key的，群组数组
-		AdminID      string              //进入管理员帐号
+		AdminID      string //进入管理员帐号
 		ToUserName   string
 		FromUserName string
 	)
@@ -132,7 +131,9 @@ func main() {
 				panicErr(err)
 			}
 
-			log.Debug("通知完毕,登陆信息：", e.SKey+": "+loginMap.BaseRequest.SKey, " ", e.PassTicket+": "+loginMap.PassTicket)
+			log.Debug("通知完毕.")
+			log.Debug(e.SKey + ": " + loginMap.BaseRequest.SKey)
+			log.Debug(e.PassTicket + ": " + loginMap.PassTicket)
 			break
 		} else if status == 201 {
 			log.Notice("请在手机上确认")
@@ -152,20 +153,6 @@ func main() {
 	}
 	log.Info(fmt.Sprintf("成功获取 %d个 联系人信息,开始整理群组信息...", len(contactMap)))
 
-	//fmt.Println(contactMap)
-	groupMap = s.MapGroupInfo(contactMap)
-	groupSize := 0
-	for _, v := range groupMap {
-		groupSize += len(v)
-	}
-	log.Info(fmt.Sprintf("整理完毕，共有 %d个 群组是焦点群组，它们是：\n", groupSize))
-	for _, v := range groupMap {
-		//fmt.Println(key)
-		for _, user := range v {
-			log.Info("========>" + user.NickName)
-		}
-	}
-
 	log.Info("开始监听消息响应...")
 	var retcode, selector int64
 	regAt := regexp.MustCompile(`^@.*@.*(易云辉|ease).*$`) // 群聊时其他人说话时会在前面加上@XXX
@@ -179,12 +166,30 @@ func main() {
 			if strings.ToUpper(MeChatString) == "U" {
 				log.Info("列出用户.")
 				for i, n := range contactMap {
-					log.Info(i, n)
+					if strings.HasPrefix(i, "@@") == true { //先列出群
+						log.Info(fmt.Sprintf("%s %-30s", i[:5], FilterName(n.NickName)))
+					}
+				}
+				for i, n := range contactMap {
+					if strings.HasPrefix(i, "@@") == false && contactMap[i].VerifyFlag != 24 { //再列出用户,公众号不显示
+						log.Info(fmt.Sprintf("%s %-30s %s %s %s", i[:5], FilterName(n.NickName), iif(n.Sex == 1, "男", "女"), n.Province, n.City))
+					}
 				}
 			} else if strings.ToUpper(MeChatString) == "Q" {
 				log.Info("系统退出.")
 				close(chatString)
 				os.Exit(1)
+			} else if strings.HasPrefix(MeChatString, "@") { //指定发送人
+				if MeChatString[5:6] == ":" {
+					for i, _ := range contactMap {
+						if strings.HasPrefix(i[:5], MeChatString[0:5]) {
+							FromUserName = i
+							ToUserName = loginMap.SelfUserName
+							EchoMessage = Chat(&loginMap, 1, ToUserName, FromUserName, MeChatString[6:])
+							break
+						}
+					}
+				}
 			} else {
 				if ToUserName != "" && FromUserName != "" {
 					_ = Chat(&loginMap, 1, ToUserName, FromUserName, MeChatString)
@@ -193,7 +198,6 @@ func main() {
 					log.Info("不知道信息发向何处: ", MeChatString)
 				}
 			}
-			continue
 		default:
 		}
 
@@ -261,9 +265,7 @@ func main() {
 				} else if wxRecvMsges.MsgList[i].MsgType == 49 {
 					log.Info(contactMap[wxRecvMsges.MsgList[i].FromUserName].NickName, ": ", strings.Replace(wxRecvMsges.MsgList[i].Content, ":<br/>", ": ", -1), " 发了一条普通链接或应用分享消息")
 				} else if wxRecvMsges.MsgList[i].MsgType == 51 {
-					FromUserName = wxRecvMsges.MsgList[i].ToUserName
-					ToUserName = wxRecvMsges.MsgList[i].FromUserName
-
+					log.Info(wxRecvMsges.MsgList[i])
 					log.Info(contactMap[wxRecvMsges.MsgList[i].FromUserName].NickName, ": 主人进入微信群")
 				} else if wxRecvMsges.MsgList[i].MsgType == 10000 { //系统信息
 					log.Info(contactMap[wxRecvMsges.MsgList[i].FromUserName].NickName, ": ", strings.Replace(wxRecvMsges.MsgList[i].Content, ":<br/>", ": ", -1))
@@ -365,4 +367,17 @@ func getChat() {
 		data, _, _ := reader.ReadLine()
 		chatString <- string(data)
 	}
+}
+
+func iif(sour bool, ret1 string, ret2 string) string {
+	if sour {
+		return ret1
+	} else {
+		return ret2
+	}
+}
+
+func FilterName(name string) []byte {
+	var nameRegexp = regexp.MustCompile("\\<[\\S\\s]+?\\>")
+	return nameRegexp.ReplaceAll([]byte(name), []byte(""))
 }
