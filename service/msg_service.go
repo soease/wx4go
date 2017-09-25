@@ -91,7 +91,52 @@ func SyncCheck(loginMap *m.LoginMap) (int64, int64, error) {
 	return retcode, selector, nil
 }
 
-/* 获取用户信息
+// 获取群名或用户名
+func GetUserName(loginMap *m.LoginMap, GroupID string) string {
+	var uu []m.GroupList
+	wxUserInfo := m.UserInfo{}
+
+	uu = append(uu, m.GroupList{UserName: GroupID, EncryChatRoomId: ""})
+	urlMap := map[string]string{}
+	urlMap["type"] = "ex"
+	urlMap["r"] = fmt.Sprintf("%d", time.Now().UnixNano()/1000000)
+	urlMap[e.PassTicket] = loginMap.PassTicket
+
+	userJsonData := map[string]interface{}{}
+	userJsonData["BaseRequest"] = loginMap.BaseRequest
+	userJsonData["Count"] = 1
+	userJsonData["List"] = uu
+
+	jsonBytes, err := json.Marshal(userJsonData)
+	if err != nil {
+		fmt.Println(err)
+		return "x"
+	}
+
+	resp, err := http.Post(e.GET_GROUP_USERINFO+t.GetURLParams(urlMap), e.JSON_HEADER, strings.NewReader(string(jsonBytes)))
+	if err != nil {
+		return "x"
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+
+	//fmt.Println(string(bodyBytes))
+	/* 解析组装消息对象 */
+	err = json.Unmarshal(bodyBytes, &wxUserInfo)
+	if err != nil {
+		fmt.Println(err)
+		return "x"
+	}
+
+	if wxUserInfo.ContactList[0].DisplayName == "" {
+		return wxUserInfo.ContactList[0].NickName
+	} else {
+		return wxUserInfo.ContactList[0].DisplayName
+	}
+}
+
+/* 获取群中的用户信息
    POST:https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxbatchgetcontact?
         type=ex&
         r=1453373586582&

@@ -87,6 +87,7 @@ func main() {
 		AdminID      string //进入管理员帐号
 		ToUserName   string
 		FromUserName string
+		MeToUser     string //主动发送信息到用户
 	)
 
 	// 从微信服务器获取UUID
@@ -161,6 +162,7 @@ func main() {
 
 	for {
 
+		//控制台命令
 		select {
 		case MeChatString := <-chatString:
 			if strings.ToUpper(MeChatString) == "U" {
@@ -175,7 +177,7 @@ func main() {
 						log.Info(fmt.Sprintf("%s %-30s %s %s %s", i[:5], FilterName(n.NickName), iif(n.Sex == 1, "男", "女"), n.Province, n.City))
 					}
 				}
-			} else if strings.ToUpper(MeChatString) == "Q" {
+			} else if strings.ToUpper(MeChatString) == "QUIT" {
 				log.Info("系统退出.")
 				close(chatString)
 				os.Exit(1)
@@ -183,19 +185,18 @@ func main() {
 				if MeChatString[5:6] == ":" {
 					for i, _ := range contactMap {
 						if strings.HasPrefix(i[:5], MeChatString[0:5]) {
-							FromUserName = i
-							ToUserName = loginMap.SelfUserName
-							EchoMessage = Chat(&loginMap, 1, ToUserName, FromUserName, MeChatString[6:])
+							MeToUser = i
+							EchoMessage = Chat(&loginMap, 1, loginMap.SelfUserName, MeToUser, MeChatString[6:])
 							break
 						}
 					}
 				}
 			} else {
-				if ToUserName != "" && FromUserName != "" {
-					_ = Chat(&loginMap, 1, ToUserName, FromUserName, MeChatString)
-					log.Info("我的回复：", MeChatString)
+				if MeToUser != "" {
+					_ = Chat(&loginMap, 1, loginMap.SelfUserName, MeToUser, MeChatString)
+					log.Info("我的消息：", MeChatString)
 				} else {
-					log.Info("不知道信息发向何处: ", MeChatString)
+					log.Info("不知道消息发向何处: ", MeChatString)
 				}
 			}
 		default:
@@ -255,24 +256,27 @@ func main() {
 				} else if wxRecvMsges.MsgList[i].MsgType == 3 {
 					picXML := m.PicInfo{}
 					err = xml.Unmarshal([]byte(Html2Txt(Message)), &picXML)
-					log.Info(contactMap[wxRecvMsges.MsgList[i].FromUserName].NickName, ": ", UserNickName, ": 发了一张图片 ", PicUrl(wxRecvMsges.MsgList[i].MsgId))
+					log.Info(contactMap[FromUserName].NickName, ": ", UserNickName, ": 发了一张图片 ", PicUrl(wxRecvMsges.MsgList[i].MsgId))
 				} else if wxRecvMsges.MsgList[i].MsgType == 34 {
-					log.Info(contactMap[wxRecvMsges.MsgList[i].FromUserName].NickName, ": ", strings.Split(wxRecvMsges.MsgList[i].Content, ":<br/>")[0]+": 发了一个语音信息")
+					log.Info(contactMap[FromUserName].NickName, ": ", strings.Split(wxRecvMsges.MsgList[i].Content, ":<br/>")[0]+": 发了一个语音信息")
 				} else if wxRecvMsges.MsgList[i].MsgType == 43 {
-					log.Info(contactMap[wxRecvMsges.MsgList[i].FromUserName].NickName, ": ", strings.Split(wxRecvMsges.MsgList[i].Content, ":<br/>")[0]+": 发了一个视频")
+					log.Info(contactMap[FromUserName].NickName, ": ", strings.Split(wxRecvMsges.MsgList[i].Content, ":<br/>")[0]+": 发了一个视频")
 				} else if wxRecvMsges.MsgList[i].MsgType == 47 {
-					log.Info(contactMap[wxRecvMsges.MsgList[i].FromUserName].NickName, ": ", strings.Split(wxRecvMsges.MsgList[i].Content, ":<br/>")[0]+": 发了一个发情")
+					log.Info(contactMap[FromUserName].NickName, ": ", strings.Split(wxRecvMsges.MsgList[i].Content, ":<br/>")[0]+": 发了一个发情")
 				} else if wxRecvMsges.MsgList[i].MsgType == 49 {
-					log.Info(contactMap[wxRecvMsges.MsgList[i].FromUserName].NickName, ": ", strings.Replace(wxRecvMsges.MsgList[i].Content, ":<br/>", ": ", -1), " 发了一条普通链接或应用分享消息")
+					log.Info(contactMap[FromUserName].NickName, ": ", strings.Replace(wxRecvMsges.MsgList[i].Content, ":<br/>", ": ", -1), " 发了一条普通链接或应用分享消息")
 				} else if wxRecvMsges.MsgList[i].MsgType == 51 {
-					log.Info(wxRecvMsges.MsgList[i])
-					log.Info(contactMap[wxRecvMsges.MsgList[i].FromUserName].NickName, ": 主人进入微信群")
+					if strings.HasPrefix(ToUserName, "@@") {
+						log.Info(contactMap[FromUserName].NickName, ": 客户端进入微信群", s.GetUserName(&loginMap, ToUserName))
+					} else {
+						log.Info(contactMap[FromUserName].NickName, ": 客户端进入微信", s.GetUserName(&loginMap, ToUserName))
+					}
 				} else if wxRecvMsges.MsgList[i].MsgType == 10000 { //系统信息
-					log.Info(contactMap[wxRecvMsges.MsgList[i].FromUserName].NickName, ": ", strings.Replace(wxRecvMsges.MsgList[i].Content, ":<br/>", ": ", -1))
+					log.Info(contactMap[FromUserName].NickName, ": ", strings.Replace(wxRecvMsges.MsgList[i].Content, ":<br/>", ": ", -1))
 				} else if wxRecvMsges.MsgList[i].MsgType == 10002 {
-					log.Info(contactMap[wxRecvMsges.MsgList[i].FromUserName].NickName, ": ", strings.Replace(wxRecvMsges.MsgList[i].Content, ":<br/>", ": ", -1), " 撤回了一条消息")
+					log.Info(contactMap[FromUserName].NickName, ": ", strings.Replace(wxRecvMsges.MsgList[i].Content, ":<br/>", ": ", -1), " 撤回了一条消息")
 				} else {
-					log.Info(wxRecvMsges.MsgList[i].MsgType, contactMap[wxRecvMsges.MsgList[i].FromUserName].NickName+":", wxRecvMsges.MsgList[i].Content)
+					log.Info(wxRecvMsges.MsgList[i].MsgType, contactMap[FromUserName].NickName+":", wxRecvMsges.MsgList[i].Content)
 				}
 
 				if EchoMessage != "" { //显示回复信息

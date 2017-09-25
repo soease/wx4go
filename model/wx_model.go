@@ -77,6 +77,11 @@ type UserList struct {
 	RoomId   string `json:"EncryChatRoomId"`
 }
 
+type GroupList struct { //组列表，用于查询组信息
+	UserName        string `json:"UserName"`
+	EncryChatRoomId string `json:"EncryChatRoomId"`
+}
+
 /* 设计一个构造成字符串的结构体方法 */
 func (sks SyncKeysJsonData) ToString() string {
 	resultStr := ""
@@ -131,37 +136,52 @@ type UserInfo struct {
 
 //用户信息
 type Contact struct {
-	Uin              int      `json:"Uin"`
-	UserName         string   `json:"UserName"`
-	NickName         string   `json:"NickName"`
-	HeadImgUrl       string   `json:"HeadImgUrl"`
-	ContactFlag      int      `json:"ContactFlag"`
-	MemberCount      int      `json:"MemberCount"`
-	MemberList       []string `json:"MemberList"`
-	RemarkName       string   `json:"RemarkName"`
-	HideInputBarFlag int      `json:"HideInputBarFlag"`
-	Sex              int      `json:"Sex"`
-	Signature        string   `json:"Signature"`
-	VerifyFlag       int      `json:"VerifyFlag"`
-	OwnerUin         int      `json:"OwnerUin"`
-	PYInitial        string   `json:"PYInitial"`
-	PYQuanPin        string   `json:"PYQuanPin"`
-	RemarkPYInitial  string   `json:"RemarkPYInitial"`
-	RemarkPYQuanPin  string   `json:"RemarkPYQuanPin"`
-	StarFriend       int      `json:"StarFriend"`
-	AppAccountFlag   int      `json:"AppAccountFlag"`
-	Statues          int      `json:"Statues"`
-	AttrStatus       int64    `json:"AttrStatus"`
-	Province         string   `json:"Province"`
-	City             string   `json:"City"`
-	Alias            string   `json:"Alias"`
-	SnsFlag          int      `json:"SnsFlag"`
-	UniFriend        int      `json:"UniFriend"`
-	DisplayName      string   `json:"DisplayName"`
-	ChatRoomId       int      `json:"ChatRoomId"`
-	KeyWord          string   `json:"KeyWord"`
-	EncryChatRoomId  string   `json:"EncryChatRoomId"`
-	IsOwner          int      `json:"IsOwner"`
+	Uin              int                  `json:"Uin"`
+	UserName         string               `json:"UserName"`
+	NickName         string               `json:"NickName"`
+	HeadImgUrl       string               `json:"HeadImgUrl"`
+	ContactFlag      int                  `json:"ContactFlag"`
+	MemberCount      int                  `json:"MemberCount"`
+	MemberList       []Contact_MemberList `json:"MemberList"`
+	RemarkName       string               `json:"RemarkName"`
+	HideInputBarFlag int                  `json:"HideInputBarFlag"`
+	Sex              int                  `json:"Sex"`
+	Signature        string               `json:"Signature"`
+	VerifyFlag       int                  `json:"VerifyFlag"`
+	OwnerUin         int                  `json:"OwnerUin"`
+	PYInitial        string               `json:"PYInitial"`
+	PYQuanPin        string               `json:"PYQuanPin"`
+	RemarkPYInitial  string               `json:"RemarkPYInitial"`
+	RemarkPYQuanPin  string               `json:"RemarkPYQuanPin"`
+	StarFriend       int                  `json:"StarFriend"`
+	AppAccountFlag   int                  `json:"AppAccountFlag"`
+	Statues          int                  `json:"Statues"`
+	AttrStatus       int64                `json:"AttrStatus"`
+	Province         string               `json:"Province"`
+	City             string               `json:"City"`
+	Alias            string               `json:"Alias"`
+	SnsFlag          int                  `json:"SnsFlag"`
+	UniFriend        int                  `json:"UniFriend"`
+	DisplayName      string               `json:"DisplayName"`
+	ChatRoomId       int                  `json:"ChatRoomId"`
+	KeyWord          string               `json:"KeyWord"`
+	EncryChatRoomId  string               `json:"EncryChatRoomId"`
+	IsOwner          int                  `json:"IsOwner"`
+}
+
+//当获取群组信息时，会附加群内的用户信息
+type Contact_MemberList struct {
+	Uin             int    `json:"Uin"`
+	UserName        string `json:"UserName"`
+	NickName        string `json:"NickName"`
+	AttrStatus      int    `json:"AttrStatus"`
+	PYInitial       string `json:"PYInitial"`
+	PYQuanPin       string `json:"PYQuanPin"`
+	RemarkPYInitial string `json:"RemarkPYInitial"`
+	RemarkPYQuanPin string `json:"RemarkPYQuanPin"`
+	MemberStatus    int    `json:"MemberStatus"`
+	DisplayName     string `json:"DisplayName"`
+	KeyWord         string `json:"KeyWord"`
 }
 
 type BaseResponse struct {
