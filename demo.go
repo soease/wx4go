@@ -9,9 +9,11 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"github.com/Comdex/imgo"
 	"github.com/op/go-logging"
 	e "github.com/soease/wx4go/enum"
 	m "github.com/soease/wx4go/model"
@@ -33,6 +35,7 @@ var (
 	UserInfoList map[string]string //把用户信息存起来
 	log          = logging.MustGetLogger("example")
 	chatString   chan string
+	QRFile       string = "./qrcode.jpg"
 )
 
 type AppConfig struct {
@@ -40,6 +43,7 @@ type AppConfig struct {
 	AutoReplay_KeyFilter       string //屏蔽关键词
 	AutoReplay_FunKey          string //调戏功能关键词
 	AutoReplay_PrivateFunction string //私人功能定义
+	COMScreen                  string //串口屏上显示二维码
 }
 
 type InfoRet struct { //AI返回信息解析
@@ -69,6 +73,8 @@ func init() {
 	appConfig.AutoReplay_KeyFilter = conf.GetValue("chat", "KeyFilter")
 	appConfig.AutoReplay_FunKey = conf.GetValue("chat", "FunKey")
 	appConfig.AutoReplay_PrivateFunction = conf.GetValue("chat", "PrivateFunction")
+	appConfig.COMScreen = conf.GetValue("chat", "COMScreen")
+
 	UserInfoList = make(map[string]string)
 
 	chatString = make(chan string)
@@ -90,23 +96,61 @@ func main() {
 		MeToUser     string //主动发送信息到用户
 	)
 
+	log.Info("系统启动中...")
 	// 从微信服务器获取UUID
 	uuid, err = s.GetUUIDFromWX()
 	if err != nil {
 		panicErr(err)
 	}
 
+	log.Info("获取二维码...")
 	// 根据UUID获取二维码
 	err = s.DownloadImagIntoDir(e.QRCODE_URL+uuid, ".")
 	panicErr(err)
-	if runtime.GOOS == "linux" {
-		cmd = exec.Command("eog", "./qrcode.jpg")
-	} else {
-		cmd = exec.Command(`cmd`, `/c start ./qrcode.jpg`)
-	}
-	cmd.Start()
 
-	panicErr(err)
+	log.Info("显示二维码...")
+	if strings.ToUpper(appConfig.COMScreen) == "TRUE" {
+		//go Command("stty -F /dev/ttyS0 raw 115200")
+		log.Info("二维码处理中...")
+		var img [][][]uint8
+		img, _ = imgo.ResizeForMatrix(QRFile, 200, 200)
+		log.Info("二维码显示中...")
+		go Command(`echo "CLS(0);\r\n"> /dev/ttyS0`)
+		var buf bytes.Buffer
+		for i := 10; i < 190; i++ {
+			for n := 10; n < 190; n++ {
+				if img[i][n][1] > 200 {
+					buf.WriteString(fmt.Sprintf("PS(%d,%d,15);", n-10, i-10))
+				}
+				if len(buf.String()) > 900 {
+					Command("echo \"" + buf.String() + "\r\n\"> /dev/ttyS0")
+					buf.Reset()
+				}
+			}
+		}
+	} else {
+		if runtime.GOOS == "linux" {
+			cmd = exec.Command("eog", QRFile)
+			/*
+				cmd = exec.Command("echo")
+				var img [][][]uint8
+				img, _ = imgo.ResizeForMatrix(QRFile, 280, 180)
+				for i := 0; i < 180; i++ {
+					for n := 0; n < 280; n++ {
+						if img[i][n][1] > 200 {
+							fmt.Print("█")
+						} else {
+							fmt.Print(" ")
+						}
+					}
+					fmt.Println("")
+				}
+			*/
+		} else {
+			cmd = exec.Command("cmd", "/c start "+QRFile)
+		}
+		cmd.Start()
+	}
 
 	// 轮询服务器判断二维码是否扫过暨是否登陆了
 	for {
@@ -145,8 +189,9 @@ func main() {
 		}
 	}
 
-	cmd.Process.Kill() //关闭显示的二维码图（Win下未生效）
-
+	if strings.ToUpper(appConfig.COMScreen) != "TRUE" {
+		cmd.Process.Kill() //关闭显示的二维码图（Win下未生效）
+	}
 	log.Info("开始获取联系人信息...")
 	contactMap, err = s.GetAllContact(&loginMap)
 	if err != nil {
@@ -384,4 +429,9 @@ func iif(sour bool, ret1 string, ret2 string) string {
 func FilterName(name string) []byte {
 	var nameRegexp = regexp.MustCompile("\\<[\\S\\s]+?\\>")
 	return nameRegexp.ReplaceAll([]byte(name), []byte(""))
+}
+
+func Command(cmd string) {
+	c := exec.Command("ash", "-c", cmd)
+	c.Start()
 }

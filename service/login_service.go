@@ -74,6 +74,9 @@ func DownloadImagIntoDir(url string, dirPath string) error {
 
 	_, err = io.Copy(dst, resp.Body)
 	return err
+
+	//pix, err := ioutil.ReadAll(resp.Body)
+	//return pix, err
 }
 
 /* 判断微信是否登陆 */
