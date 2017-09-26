@@ -3,6 +3,7 @@
 开发：Ease
 时间：2017-9-3
 修改：2017-9-23
+备注：env GOOS=linux GOARCH=mipsle go build -ldflags "-s -w" .
 */
 
 package main
@@ -10,6 +11,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"code.google.com/p/mahonia"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
@@ -43,7 +45,7 @@ type AppConfig struct {
 	AutoReplay_KeyFilter       string //屏蔽关键词
 	AutoReplay_FunKey          string //调戏功能关键词
 	AutoReplay_PrivateFunction string //私人功能定义
-	COMScreen                  string //串口屏上显示二维码
+	COMScreen                  bool   //串口屏上显示二维码
 }
 
 type InfoRet struct { //AI返回信息解析
@@ -73,8 +75,6 @@ func init() {
 	appConfig.AutoReplay_KeyFilter = conf.GetValue("chat", "KeyFilter")
 	appConfig.AutoReplay_FunKey = conf.GetValue("chat", "FunKey")
 	appConfig.AutoReplay_PrivateFunction = conf.GetValue("chat", "PrivateFunction")
-	appConfig.COMScreen = conf.GetValue("chat", "COMScreen")
-
 	UserInfoList = make(map[string]string)
 
 	chatString = make(chan string)
@@ -96,7 +96,7 @@ func main() {
 		MeToUser     string //主动发送信息到用户
 	)
 
-	log.Info("系统启动中...")
+	log.Info("系统启动中,运行环境:", runtime.GOOS, runtime.GOARCH)
 	// 从微信服务器获取UUID
 	uuid, err = s.GetUUIDFromWX()
 	if err != nil {
@@ -109,30 +109,33 @@ func main() {
 	panicErr(err)
 
 	log.Info("显示二维码...")
-	if strings.ToUpper(appConfig.COMScreen) == "TRUE" {
-		//go Command("stty -F /dev/ttyS0 raw 115200")
-		log.Info("二维码处理中...")
-		var img [][][]uint8
-		img, _ = imgo.ResizeForMatrix(QRFile, 200, 200)
-		log.Info("二维码显示中...")
-		go Command(`echo "CLS(0);\r\n"> /dev/ttyS0`)
-		var buf bytes.Buffer
-		for i := 10; i < 190; i++ {
-			for n := 10; n < 190; n++ {
-				if img[i][n][1] > 200 {
-					buf.WriteString(fmt.Sprintf("PS(%d,%d,15);", n-10, i-10))
-				}
-				if len(buf.String()) > 900 {
-					Command("echo \"" + buf.String() + "\r\n\"> /dev/ttyS0")
-					buf.Reset()
+	if runtime.GOOS == "linux" {
+		if runtime.GOARCH == "mipsle" {
+			// 在MT7688中运行
+			//go Command("stty -F /dev/ttyS0 raw 115200")  //速率设置
+			log.Info("二维码处理中,速度较慢请稍候...")
+			var img [][][]uint8
+			go Command(`echo "CLS(0);\r\n"> /dev/ttyS0`)
+			img, _ = imgo.ResizeForMatrix(QRFile, 200, 195)
+			log.Info("二维码显示中...")
+			var buf bytes.Buffer
+			for i := 10; i < 190; i++ {
+				for n := 10; n < 190; n++ {
+					if img[i][n][1] > 200 {
+						buf.WriteString(fmt.Sprintf("PS(%d,%d,15);", n-10, i-10))
+					}
+					if len(buf.String()) > 900 {
+						Command("echo \"" + buf.String() + "\r\n\"> /dev/ttyS0")
+						buf.Reset() //清空缓存
+					}
 				}
 			}
-		}
-	} else {
-		if runtime.GOOS == "linux" {
+			cmd = exec.Command("echo") //没有实际用途，仅是为了统一处理后面的Kill
+		} else {
+			// 在普通的Linux环境下运行
 			cmd = exec.Command("eog", QRFile)
 			/*
-				cmd = exec.Command("echo")
+				//在命令行显示二维码，需要把字符界面缩很小
 				var img [][][]uint8
 				img, _ = imgo.ResizeForMatrix(QRFile, 280, 180)
 				for i := 0; i < 180; i++ {
@@ -146,11 +149,12 @@ func main() {
 					fmt.Println("")
 				}
 			*/
-		} else {
-			cmd = exec.Command("cmd", "/c start "+QRFile)
 		}
-		cmd.Start()
+	} else if runtime.GOOS == "windows" {
+		// 在windows环境中运行
+		cmd = exec.Command("cmd", "/c start "+QRFile)
 	}
+	cmd.Start()
 
 	// 轮询服务器判断二维码是否扫过暨是否登陆了
 	for {
@@ -189,17 +193,18 @@ func main() {
 		}
 	}
 
-	if strings.ToUpper(appConfig.COMScreen) != "TRUE" {
-		cmd.Process.Kill() //关闭显示的二维码图（Win下未生效）
+	if runtime.GOARCH == "mipsle" {
+		go Command(`echo "CLS(0);\r\n"> /dev/ttyS0`)
 	}
-	log.Info("开始获取联系人信息...")
+	cmd.Process.Kill() //关闭显示的二维码图（Win下未生效）
+	Log([]string{"开始获取联系人信息..."}...)
 	contactMap, err = s.GetAllContact(&loginMap)
 	if err != nil {
 		panicErr(err)
 	}
 	log.Info(fmt.Sprintf("成功获取 %d个 联系人信息,开始整理群组信息...", len(contactMap)))
 
-	log.Info("开始监听消息响应...")
+	Log([]string{"开始监听消息响应..."}...)
 	var retcode, selector int64
 	regAt := regexp.MustCompile(`^@.*@.*(易云辉|ease).*$`) // 群聊时其他人说话时会在前面加上@XXX
 	regGroup := regexp.MustCompile(`^@@.+`)
@@ -273,7 +278,7 @@ func main() {
 					Message = wxRecvMsges.MsgList[i].Content
 				}
 				if wxRecvMsges.MsgList[i].MsgType == 1 { // 普通文本消息
-					log.Info(contactMap[wxRecvMsges.MsgList[i].FromUserName].NickName, ":", Message)
+					Log([]string{contactMap[wxRecvMsges.MsgList[i].FromUserName].NickName, ":", Message}...)
 
 					if regGroup.MatchString(wxRecvMsges.MsgList[i].FromUserName) && regAt.MatchString(wxRecvMsges.MsgList[i].Content) {
 						// 有人在群里@我，发个消息回答一下
@@ -312,9 +317,9 @@ func main() {
 					log.Info(contactMap[FromUserName].NickName, ": ", strings.Replace(wxRecvMsges.MsgList[i].Content, ":<br/>", ": ", -1), " 发了一条普通链接或应用分享消息")
 				} else if wxRecvMsges.MsgList[i].MsgType == 51 {
 					if strings.HasPrefix(ToUserName, "@@") {
-						log.Info(contactMap[FromUserName].NickName, ": 客户端进入微信群", s.GetUserName(&loginMap, ToUserName))
+						Log([]string{contactMap[FromUserName].NickName, ": 客户端进入微信群", s.GetUserName(&loginMap, ToUserName)}...)
 					} else {
-						log.Info(contactMap[FromUserName].NickName, ": 客户端进入微信", s.GetUserName(&loginMap, ToUserName))
+						Log([]string{contactMap[FromUserName].NickName, ": 客户端进入微信", s.GetUserName(&loginMap, ToUserName)}...)
 					}
 				} else if wxRecvMsges.MsgList[i].MsgType == 10000 { //系统信息
 					log.Info(contactMap[FromUserName].NickName, ": ", strings.Replace(wxRecvMsges.MsgList[i].Content, ":<br/>", ": ", -1))
@@ -434,4 +439,20 @@ func FilterName(name string) []byte {
 func Command(cmd string) {
 	c := exec.Command("ash", "-c", cmd)
 	c.Start()
+}
+
+func Log(args ...string) {
+	new := make([]interface{}, len(args))
+	for i, v := range args {
+		new[i] = interface{}(v)
+	}
+	log.Info(new...)
+	if runtime.GOARCH == "mipsle" {
+		var enc mahonia.Encoder
+		enc = mahonia.NewEncoder("gbk")
+		if ret, ok := enc.ConvertStringOK(strings.Join(args, "")); ok {
+			go Command(`echo "BOXF(0,0,220,40,0);BS16(1,1,220,3,'` + ret + `',15);\r\n"> /dev/ttyS0`)
+		}
+	}
+
 }
