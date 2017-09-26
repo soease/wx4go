@@ -2,6 +2,8 @@
 
 原出处github.com/newflydd/itchat4go，作了一些扩充。
 
+这是一个Python版 github.com/littlecodersh/ItChat
+
 代码不够漂亮，先运行，后整理。
 
 运行：go run demo.go
