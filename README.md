@@ -7,7 +7,9 @@
 运行：go run demo.go
 
 MT7688+串口屏上的效果：
+
 ![](https://github.com/soease/wx4go/blob/master/other/MT7688.jpg)
+
 ---
 
 ## 功能
