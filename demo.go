@@ -35,9 +35,12 @@ var (
 	err          error
 	appConfig    AppConfig         //系统配置
 	UserInfoList map[string]string //把用户信息存起来
-	log          = logging.MustGetLogger("example")
 	chatString   chan string
-	QRFile       string = "./qrcode.jpg"
+	logFile      *os.File
+	log          = logging.MustGetLogger("example")
+	format       = logging.MustStringFormatter(`%{color}%{time:2006-01-02 15:04:05} %{level:.4s} %{id:03x}%{color:reset} %{message}`)
+	logFileName  = "log.txt"
+	QRFile       = "./qrcode.jpg"
 )
 
 type AppConfig struct {
@@ -56,18 +59,13 @@ type InfoRet struct { //AI返回信息解析
 // 读取配置文件
 func init() {
 	// 日志输出及格式
-
-	var format = logging.MustStringFormatter(`%{color}%{time:2006-01-02 15:04:05} [%{level:.4s}] %{id:03x}%{color:reset} %{message}`)
-	file, err := os.OpenFile("./chat.log", os.O_APPEND, 0666)
-	if err != nil {
-		printErr(err)
-	}
-	defer file.Close()
-	backend1 := logging.NewLogBackend(os.Stderr, "", 0)
-	backend2 := logging.NewLogBackend(file, "", 0)
-	backendFormatter1 := logging.NewBackendFormatter(backend1, format)
-	backendFormatter2 := logging.NewBackendFormatter(backend2, format)
-	logging.SetBackend(backendFormatter1, backendFormatter2)
+	logFile, err = os.OpenFile(logFileName, os.O_APPEND|os.O_CREATE, 0666)
+	panicErr(err)
+	backend1 := logging.NewLogBackend(logFile, "", 0)
+	backend2 := logging.NewLogBackend(os.Stderr, "", 0)
+	backend2Formatter := logging.NewBackendFormatter(backend2, format)
+	backend1Formatter := logging.NewBackendFormatter(backend1, format)
+	logging.SetBackend(backend1Formatter, backend2Formatter)
 
 	//系统配置
 	conf := goini.SetConfig("./app.conf")
@@ -96,28 +94,26 @@ func main() {
 		MeToUser     string //主动发送信息到用户
 	)
 
-	log.Info("系统启动中,运行环境:", runtime.GOOS, runtime.GOARCH)
+	Log(logging.INFO, "系统启动中,运行环境:", runtime.GOOS, runtime.GOARCH)
 	// 从微信服务器获取UUID
 	uuid, err = s.GetUUIDFromWX()
-	if err != nil {
-		panicErr(err)
-	}
+	panicErr(err)
 
-	log.Info("获取二维码...")
+	Log(logging.INFO, "获取二维码...")
 	// 根据UUID获取二维码
 	err = s.DownloadImagIntoDir(e.QRCODE_URL+uuid, ".")
 	panicErr(err)
 
-	log.Info("显示二维码...")
+	Log(logging.INFO, "显示二维码...")
 	if runtime.GOOS == "linux" {
 		if runtime.GOARCH == "mipsle" {
 			// 在MT7688中运行
 			//go Command("stty -F /dev/ttyS0 raw 115200")  //速率设置
-			log.Info("二维码处理中,速度较慢请稍候...")
+			Log(logging.INFO, "二维码处理中,速度较慢请稍候...")
 			var img [][][]uint8
 			go Command(`echo "CLS(0);\r\n"> /dev/ttyS0`)
 			img, _ = imgo.ResizeForMatrix(QRFile, 200, 195)
-			log.Info("二维码显示中...")
+			Log(logging.INFO, "二维码显示中...")
 			var buf bytes.Buffer
 			for i := 10; i < 190; i++ {
 				for n := 10; n < 190; n++ {
@@ -158,38 +154,32 @@ func main() {
 
 	// 轮询服务器判断二维码是否扫过暨是否登陆了
 	for {
-		log.Info("正在验证登陆... ...")
+		Log(logging.INFO, "正在验证登陆... ...")
 		status, msg := s.CheckLogin(uuid)
 
 		if status == 200 {
-			log.Info("登陆成功,处理登陆信息...")
+			Log(logging.INFO, "登陆成功,处理登陆信息...")
 			loginMap, err = s.ProcessLoginInfo(msg)
-			if err != nil {
-				panicErr(err)
-			}
+			panicErr(err)
 
-			log.Info("登陆信息处理完毕,正在初始化微信....")
+			Log(logging.INFO, "登陆信息处理完毕,正在初始化微信....")
 			err = s.InitWX(&loginMap)
-			if err != nil {
-				panicErr(err)
-			}
+			panicErr(err)
 
-			log.Info("初始化完毕,通知微信服务器登陆状态变更...")
+			Log(logging.INFO, "初始化完毕,通知微信服务器登陆状态变更...")
 			err = s.NotifyStatus(&loginMap)
-			if err != nil {
-				panicErr(err)
-			}
+			panicErr(err)
 
-			log.Debug("通知完毕.")
-			log.Debug(e.SKey + ": " + loginMap.BaseRequest.SKey)
-			log.Debug(e.PassTicket + ": " + loginMap.PassTicket)
+			Log(logging.INFO, "通知完毕.")
+			Log(logging.DEBUG, e.SKey, loginMap.BaseRequest.SKey)
+			Log(logging.DEBUG, e.PassTicket, loginMap.PassTicket)
 			break
 		} else if status == 201 {
-			log.Notice("请在手机上确认")
+			Log(logging.INFO, "请在手机上确认")
 		} else if status == 408 {
-			log.Notice("请扫描二维码")
+			Log(logging.INFO, "请扫描二维码")
 		} else {
-			log.Notice(msg)
+			Log(logging.ERROR, msg)
 		}
 	}
 
@@ -197,14 +187,12 @@ func main() {
 		go Command(`echo "CLS(0);\r\n"> /dev/ttyS0`)
 	}
 	cmd.Process.Kill() //关闭显示的二维码图（Win下未生效）
-	Log([]string{"开始获取联系人信息..."}...)
+	Log(logging.INFO, "开始获取联系人信息...")
 	contactMap, err = s.GetAllContact(&loginMap)
-	if err != nil {
-		panicErr(err)
-	}
-	log.Info(fmt.Sprintf("成功获取 %d个 联系人信息,开始整理群组信息...", len(contactMap)))
+	panicErr(err)
+	Log(logging.INFO, fmt.Sprintf("成功获取 %d个 联系人信息,开始整理群组信息...", len(contactMap)))
 
-	Log([]string{"开始监听消息响应..."}...)
+	Log(logging.INFO, "开始监听消息响应...")
 	var retcode, selector int64
 	regAt := regexp.MustCompile(`^@.*@.*(易云辉|ease).*$`) // 群聊时其他人说话时会在前面加上@XXX
 	regGroup := regexp.MustCompile(`^@@.+`)
@@ -216,19 +204,19 @@ func main() {
 		select {
 		case MeChatString := <-chatString:
 			if strings.ToUpper(MeChatString) == "U" {
-				log.Info("列出用户.")
+				Log(logging.INFO, "列出用户.")
 				for i, n := range contactMap {
 					if strings.HasPrefix(i, "@@") == true { //先列出群
-						log.Info(fmt.Sprintf("%s %-30s", i[:5], FilterName(n.NickName)))
+						Log(logging.INFO, fmt.Sprintf("%s %-30s", i[:5], FilterName(n.NickName)))
 					}
 				}
 				for i, n := range contactMap {
 					if strings.HasPrefix(i, "@@") == false && contactMap[i].VerifyFlag != 24 { //再列出用户,公众号不显示
-						log.Info(fmt.Sprintf("%s %-30s %s %s %s", i[:5], FilterName(n.NickName), iif(n.Sex == 1, "男", "女"), n.Province, n.City))
+						Log(logging.INFO, fmt.Sprintf("%s %-30s %s %s %s", i[:5], FilterName(n.NickName), iif(n.Sex == 1, "男", "女"), n.Province, n.City))
 					}
 				}
 			} else if strings.ToUpper(MeChatString) == "QUIT" {
-				log.Info("系统退出.")
+				Log(logging.INFO, "系统退出.")
 				close(chatString)
 				os.Exit(1)
 			} else if strings.HasPrefix(MeChatString, "@") { //指定发送人
@@ -244,9 +232,9 @@ func main() {
 			} else {
 				if MeToUser != "" {
 					_ = Chat(&loginMap, 1, loginMap.SelfUserName, MeToUser, MeChatString)
-					log.Info("我的消息：", MeChatString)
+					Log(logging.INFO, "我的消息：", MeChatString)
 				} else {
-					log.Info("不知道消息发向何处: ", MeChatString)
+					Log(logging.INFO, "不知道消息发向何处: ", MeChatString)
 				}
 			}
 		default:
@@ -257,7 +245,7 @@ func main() {
 			//log.Error(retcode, selector)
 			printErr(err)
 			if retcode == 1101 {
-				log.Error("帐号已在其他地方登陆，程序将退出。")
+				Log(logging.INFO, "帐号已在其他地方登陆，程序将退出。")
 				os.Exit(2)
 			}
 			continue
@@ -278,7 +266,7 @@ func main() {
 					Message = wxRecvMsges.MsgList[i].Content
 				}
 				if wxRecvMsges.MsgList[i].MsgType == 1 { // 普通文本消息
-					Log([]string{contactMap[wxRecvMsges.MsgList[i].FromUserName].NickName, ":", Message}...)
+					Log(logging.INFO, contactMap[wxRecvMsges.MsgList[i].FromUserName].NickName, ":", Message)
 
 					if regGroup.MatchString(wxRecvMsges.MsgList[i].FromUserName) && regAt.MatchString(wxRecvMsges.MsgList[i].Content) {
 						// 有人在群里@我，发个消息回答一下
@@ -306,31 +294,31 @@ func main() {
 				} else if wxRecvMsges.MsgList[i].MsgType == 3 {
 					picXML := m.PicInfo{}
 					err = xml.Unmarshal([]byte(Html2Txt(Message)), &picXML)
-					log.Info(contactMap[FromUserName].NickName, ": ", UserNickName, ": 发了一张图片 ", PicUrl(wxRecvMsges.MsgList[i].MsgId))
+					Log(logging.INFO, contactMap[FromUserName].NickName, ": ", UserNickName, ": 发了一张图片 ", PicUrl(wxRecvMsges.MsgList[i].MsgId))
 				} else if wxRecvMsges.MsgList[i].MsgType == 34 {
-					log.Info(contactMap[FromUserName].NickName, ": ", strings.Split(wxRecvMsges.MsgList[i].Content, ":<br/>")[0]+": 发了一个语音信息")
+					Log(logging.INFO, contactMap[FromUserName].NickName, ": ", strings.Split(wxRecvMsges.MsgList[i].Content, ":<br/>")[0]+": 发了一个语音信息")
 				} else if wxRecvMsges.MsgList[i].MsgType == 43 {
-					log.Info(contactMap[FromUserName].NickName, ": ", strings.Split(wxRecvMsges.MsgList[i].Content, ":<br/>")[0]+": 发了一个视频")
+					Log(logging.INFO, contactMap[FromUserName].NickName, ": ", strings.Split(wxRecvMsges.MsgList[i].Content, ":<br/>")[0]+": 发了一个视频")
 				} else if wxRecvMsges.MsgList[i].MsgType == 47 {
-					log.Info(contactMap[FromUserName].NickName, ": ", strings.Split(wxRecvMsges.MsgList[i].Content, ":<br/>")[0]+": 发了一个发情")
+					Log(logging.INFO, contactMap[FromUserName].NickName, ": ", strings.Split(wxRecvMsges.MsgList[i].Content, ":<br/>")[0]+": 发了一个发情")
 				} else if wxRecvMsges.MsgList[i].MsgType == 49 {
-					log.Info(contactMap[FromUserName].NickName, ": ", strings.Replace(wxRecvMsges.MsgList[i].Content, ":<br/>", ": ", -1), " 发了一条普通链接或应用分享消息")
+					Log(logging.INFO, contactMap[FromUserName].NickName, ": ", strings.Replace(wxRecvMsges.MsgList[i].Content, ":<br/>", ": ", -1), " 发了一条普通链接或应用分享消息")
 				} else if wxRecvMsges.MsgList[i].MsgType == 51 {
 					if strings.HasPrefix(ToUserName, "@@") {
-						Log([]string{contactMap[FromUserName].NickName, ": 客户端进入微信群", s.GetUserName(&loginMap, ToUserName)}...)
+						Log(logging.INFO, contactMap[FromUserName].NickName, ": 客户端进入微信群", s.GetUserName(&loginMap, ToUserName))
 					} else {
-						Log([]string{contactMap[FromUserName].NickName, ": 客户端进入微信", s.GetUserName(&loginMap, ToUserName)}...)
+						Log(logging.INFO, contactMap[FromUserName].NickName, ": 客户端进入微信", s.GetUserName(&loginMap, ToUserName))
 					}
 				} else if wxRecvMsges.MsgList[i].MsgType == 10000 { //系统信息
-					log.Info(contactMap[FromUserName].NickName, ": ", strings.Replace(wxRecvMsges.MsgList[i].Content, ":<br/>", ": ", -1))
+					Log(logging.INFO, contactMap[FromUserName].NickName, ": ", strings.Replace(wxRecvMsges.MsgList[i].Content, ":<br/>", ": ", -1))
 				} else if wxRecvMsges.MsgList[i].MsgType == 10002 {
-					log.Info(contactMap[FromUserName].NickName, ": ", strings.Replace(wxRecvMsges.MsgList[i].Content, ":<br/>", ": ", -1), " 撤回了一条消息")
+					Log(logging.INFO, contactMap[FromUserName].NickName, ": ", strings.Replace(wxRecvMsges.MsgList[i].Content, ":<br/>", ": ", -1), " 撤回了一条消息")
 				} else {
-					log.Info(wxRecvMsges.MsgList[i].MsgType, contactMap[FromUserName].NickName+":", wxRecvMsges.MsgList[i].Content)
+					Log(logging.INFO, fmt.Sprintf("%d", wxRecvMsges.MsgList[i].MsgType), contactMap[FromUserName].NickName+":", wxRecvMsges.MsgList[i].Content)
 				}
 
 				if EchoMessage != "" { //显示回复信息
-					log.Info("我的回复：", EchoMessage)
+					Log(logging.INFO, "我的回复：", EchoMessage)
 					EchoMessage = ""
 				}
 			}
@@ -411,7 +399,7 @@ func panicErr(err error) {
 
 func printErr(err error) {
 	if err != nil {
-		log.Error(err)
+		log.Panic(err)
 	}
 }
 
@@ -441,12 +429,18 @@ func Command(cmd string) {
 	c.Start()
 }
 
-func Log(args ...string) {
+func Log(logType logging.Level, args ...string) {
 	new := make([]interface{}, len(args))
 	for i, v := range args {
 		new[i] = interface{}(v)
 	}
-	log.Info(new...)
+	if logType == logging.DEBUG {
+		log.Debug(new...)
+	} else if logType == logging.ERROR {
+		log.Error(new...)
+	} else {
+		log.Info(new...)
+	}
 	if runtime.GOARCH == "mipsle" {
 		var enc mahonia.Encoder
 		enc = mahonia.NewEncoder("gbk")
