@@ -15,12 +15,14 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
-	"github.com/Comdex/imgo"
+	"github.com/nfnt/resize"
 	"github.com/op/go-logging"
 	e "github.com/soease/wx4go/enum"
 	m "github.com/soease/wx4go/model"
 	s "github.com/soease/wx4go/service"
 	"github.com/widuu/goini"
+	"image"
+	"image/jpeg"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -37,12 +39,14 @@ var (
 	UserInfoList map[string]string //把用户信息存起来
 	chatString   chan string
 	logFile      *os.File
-	log          = logging.MustGetLogger("example")
-	format       = logging.MustStringFormatter(`%{color}%{time:2006-01-02 15:04:05} %{level:.4s} %{id:03x}%{color:reset} %{message}`)
-	logFileName  = "log.txt"
-	QRFile       = "./qrcode.jpg"
+
+	logFileName = "./log.txt"
+	QRFile      = "./qrcode.jpg"
+	log         = logging.MustGetLogger("example")
+	format      = logging.MustStringFormatter(`%{color}%{time:2006-01-02 15:04:05} %{level:.4s} %{id:03x}%{color:reset} %{message}`)
 )
 
+//配置
 type AppConfig struct {
 	AutoReplay_PrivateChat     string //私聊自动回复
 	AutoReplay_KeyFilter       string //屏蔽关键词
@@ -56,9 +60,9 @@ type InfoRet struct { //AI返回信息解析
 	Content string `json:"content"`
 }
 
-// 读取配置文件
+//读取配置文件
 func init() {
-	// 日志输出及格式
+	//日志输出及格式
 	logFile, err = os.OpenFile(logFileName, os.O_APPEND|os.O_CREATE, 0666)
 	panicErr(err)
 	backend1 := logging.NewLogBackend(logFile, "", 0)
@@ -86,7 +90,6 @@ func main() {
 		UserNickName string
 		EchoMessage  string
 		loginMap     m.LoginMap
-		uuid         string
 		contactMap   map[string]m.User
 		AdminID      string //进入管理员帐号
 		ToUserName   string
@@ -96,7 +99,7 @@ func main() {
 
 	Log(logging.INFO, "系统启动中,运行环境:", runtime.GOOS, runtime.GOARCH)
 	// 从微信服务器获取UUID
-	uuid, err = s.GetUUIDFromWX()
+	uuid, err := s.GetUUIDFromWX()
 	panicErr(err)
 
 	Log(logging.INFO, "获取二维码...")
@@ -106,22 +109,25 @@ func main() {
 
 	Log(logging.INFO, "显示二维码...")
 	if runtime.GOOS == "linux" {
-		if runtime.GOARCH == "mipsle" {
-			// 在MT7688中运行
-			//go Command("stty -F /dev/ttyS0 raw 115200")  //速率设置
-			Log(logging.INFO, "二维码处理中,速度较慢请稍候...")
-			var img [][][]uint8
-			go Command(`echo "CLS(0);\r\n"> /dev/ttyS0`)
-			img, _ = imgo.ResizeForMatrix(QRFile, 200, 195)
-			Log(logging.INFO, "二维码显示中...")
+		if runtime.GOARCH == "mipsle" { // 在MT7688中运行
+			time.Sleep(time.Second)
+			go Command(`stty -F /dev/ttyS0 raw 115200; echo "CLS(0);\r\n"> /dev/ttyS0`)
 			var buf bytes.Buffer
+			var r uint32
+
+			Log(logging.NOTICE, "二维码处理中...")
+			src, err := LoadImage(QRFile)
+			panicErr(err)
+			dst := resize.Resize(200, 200, src, resize.Lanczos2) // 缩略图的大小
+
 			for i := 10; i < 190; i++ {
 				for n := 10; n < 190; n++ {
-					if img[i][n][1] > 200 {
+					r, _, _, _ = dst.At(i, n).RGBA()
+					if r > 50000 {
 						buf.WriteString(fmt.Sprintf("PS(%d,%d,15);", n-10, i-10))
 					}
 					if len(buf.String()) > 900 {
-						Command("echo \"" + buf.String() + "\r\n\"> /dev/ttyS0")
+						go Command("echo \"" + buf.String() + "\r\n\"> /dev/ttyS0")
 						buf.Reset() //清空缓存
 					}
 				}
@@ -130,20 +136,27 @@ func main() {
 		} else {
 			// 在普通的Linux环境下运行
 			cmd = exec.Command("eog", QRFile)
+
 			/*
-				//在命令行显示二维码，需要把字符界面缩很小
-				var img [][][]uint8
-				img, _ = imgo.ResizeForMatrix(QRFile, 280, 180)
-				for i := 0; i < 180; i++ {
-					for n := 0; n < 280; n++ {
-						if img[i][n][1] > 200 {
+				var r uint32
+				src, err := LoadImage(QRFile)
+				panicErr(err)
+				// 缩略图的大小
+				dst := resize.Resize(430, 430, src, resize.Lanczos2)
+				for i := 0; i < 430; i++ {
+					for n := 0; n < 430; n++ {
+						r, _, _, _ = dst.At(i, n).RGBA()
+						//fmt.Print(r, " ")
+
+						if r > 50000 {
 							fmt.Print("█")
 						} else {
 							fmt.Print(" ")
 						}
 					}
-					fmt.Println("")
+					fmt.Print("\n")
 				}
+				cmd = exec.Command("echo")
 			*/
 		}
 	} else if runtime.GOOS == "windows" {
@@ -154,7 +167,7 @@ func main() {
 
 	// 轮询服务器判断二维码是否扫过暨是否登陆了
 	for {
-		Log(logging.INFO, "正在验证登陆... ...")
+		Log(logging.NOTICE, "正在验证登陆...")
 		status, msg := s.CheckLogin(uuid)
 
 		if status == 200 {
@@ -175,9 +188,9 @@ func main() {
 			Log(logging.DEBUG, e.PassTicket, loginMap.PassTicket)
 			break
 		} else if status == 201 {
-			Log(logging.INFO, "请在手机上确认")
+			Log(logging.NOTICE, "请在手机上确认")
 		} else if status == 408 {
-			Log(logging.INFO, "请扫描二维码")
+			Log(logging.NOTICE, "请扫描二维码")
 		} else {
 			Log(logging.ERROR, msg)
 		}
@@ -254,7 +267,7 @@ func main() {
 		if retcode == 0 && selector != 0 {
 			//fmt.Printf("selector=%d,有新消息产生,准备拉取...\n", selector)
 			wxRecvMsges, err := s.WebWxSync(&loginMap)
-			panicErr(err)
+			printErr(err)
 
 			for i := 0; i < wxRecvMsges.MsgCount; i++ {
 				ToUserName = wxRecvMsges.MsgList[i].ToUserName
@@ -399,10 +412,11 @@ func panicErr(err error) {
 
 func printErr(err error) {
 	if err != nil {
-		log.Panic(err)
+		log.Error(err)
 	}
 }
 
+//获取命令行输入
 func getChat() {
 	reader := bufio.NewReader(os.Stdin)
 	for {
@@ -419,6 +433,7 @@ func iif(sour bool, ret1 string, ret2 string) string {
 	}
 }
 
+//过滤用户昵称中的符号
 func FilterName(name string) []byte {
 	var nameRegexp = regexp.MustCompile("\\<[\\S\\s]+?\\>")
 	return nameRegexp.ReplaceAll([]byte(name), []byte(""))
@@ -441,12 +456,23 @@ func Log(logType logging.Level, args ...string) {
 	} else {
 		log.Info(new...)
 	}
-	if runtime.GOARCH == "mipsle" {
+	if runtime.GOARCH == "mipsle" && logType != logging.NOTICE { //当为logging.NOTICE时不显示到串口屏,避免影响当前显示的内容
 		var enc mahonia.Encoder
 		enc = mahonia.NewEncoder("gbk")
 		if ret, ok := enc.ConvertStringOK(strings.Join(args, "")); ok {
-			go Command(`echo "BOXF(0,0,220,40,0);BS16(1,1,220,3,'` + ret + `',15);\r\n"> /dev/ttyS0`)
+			go Command(`echo "BOXF(0,0,220,52,0);BS16(1,1,220,3,'` + ret + `',15);\r\n"> /dev/ttyS0`)
 		}
 	}
 
+}
+
+// Load Image decodes an image from a file of image.
+func LoadImage(path string) (img image.Image, err error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	img, err = jpeg.Decode(file)
+	return
 }
