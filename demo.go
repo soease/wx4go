@@ -2,7 +2,7 @@
 功能：微信个人服务程序
 开发：Ease
 时间：2017-9-3
-修改：2017-9-23
+修改：2017-9-28
 备注：env GOOS=linux GOARCH=mipsle go build -ldflags "-s -w" .
 */
 
@@ -37,12 +37,13 @@ import (
 
 var (
 	err          error
-	QRFile       string            //二维码文件
-	appConfig    AppConfig         //系统配置
-	UserInfoList map[string]string //把用户信息存起来
+	QRFile       string    //二维码文件
+	appConfig    AppConfig //系统配置
 	chatString   chan string
 	logFile      *os.File
+	MeToUser     string //主动发送信息到用户
 	log          = logging.MustGetLogger("example")
+	UserInfoList = make(map[string]string) //把用户信息存起来
 )
 
 type AppConfig struct { //配置
@@ -50,8 +51,8 @@ type AppConfig struct { //配置
 	AutoReplay_KeyFilter       string //屏蔽关键词
 	AutoReplay_FunKey          string //调戏功能关键词
 	AutoReplay_PrivateFunction string //私人功能定义
-	COMScreen                  bool   //串口屏上显示二维码
 	LogFile                    string //日志文件
+	ComDisplay                 string //串口屏位置
 }
 
 type InfoRet struct { //AI返回信息解析
@@ -61,32 +62,10 @@ type InfoRet struct { //AI返回信息解析
 
 //读取配置文件
 func init() {
-	//系统配置
-	conf := goini.SetConfig("./app.conf")
-	appConfig.AutoReplay_PrivateChat = conf.GetValue("chat", "PrivateChat")
-	appConfig.AutoReplay_KeyFilter = conf.GetValue("chat", "KeyFilter")
-	appConfig.AutoReplay_FunKey = conf.GetValue("chat", "FunKey")
-	appConfig.AutoReplay_PrivateFunction = conf.GetValue("chat", "PrivateFunction")
-	appConfig.LogFile = conf.GetValue("chat", "LogFile")
-	UserInfoList = make(map[string]string)
-
-	//日志输出及格式
-	format := logging.MustStringFormatter(`%{color}%{time:2006-01-02 15:04:05} %{level:.4s} %{id:03x}%{color:reset} %{message}`)
-
-	logFile, err = os.OpenFile(appConfig.LogFile, os.O_APPEND|os.O_CREATE, 0666)
-	panicErr(err)
-	backend1 := logging.NewLogBackend(logFile, "", 0)
-	backend2 := logging.NewLogBackend(os.Stderr, "", 0)
-	backend2Formatter := logging.NewBackendFormatter(backend2, format)
-	backend1Formatter := logging.NewBackendFormatter(backend1, format)
-	logging.SetBackend(backend1Formatter, backend2Formatter)
-
-	//命令行输入信息
-	chatString = make(chan string)
-	go getChat()
-
-	//系统退出处理
-	QuitSystem()
+	confInit() //系统配置
+	logInit()
+	go getChat() //命令行输入信息
+	QuitSystem() //系统退出处理
 }
 
 func main() {
@@ -97,12 +76,11 @@ func main() {
 		EchoMessage  string
 		loginMap     m.LoginMap
 		contactMap   map[string]m.User
-		AdminID      string //进入管理员帐号
+		FunUser      = make(map[string]string) //进入调戏模式用户
 		ToUserName   string
 		FromUserName string
-		MeToUser     string //主动发送信息到用户
-		retcode      int64  //微信信息反馈
-		selector     int64  //微信信息反馈
+		retcode      int64 //微信信息反馈
+		selector     int64 //微信信息反馈
 
 	)
 
@@ -119,28 +97,7 @@ func main() {
 	Log(logging.INFO, "显示二维码...")
 	if runtime.GOOS == "linux" {
 		if runtime.GOARCH == "mipsle" { // 在MT7688中运行
-			time.Sleep(time.Second)
-			go Command(`stty -F /dev/ttyS0 raw 115200; echo "CLS(0);\r\n"> /dev/ttyS0`)
-			var buf bytes.Buffer
-			var r uint32
-
-			Log(logging.NOTICE, "二维码处理中...")
-			src, err := LoadImage(QRFile)
-			panicErr(err)
-			dst := resize.Resize(200, 200, src, resize.Lanczos2) // 缩略图的大小。我的串口屏只有220*176
-
-			for i := 10; i < 190; i++ {
-				for n := 10; n < 190; n++ {
-					r, _, _, _ = dst.At(i, n).RGBA() //获取某点颜色
-					if r > 50000 {                   // 简单判断是否是有色点
-						buf.WriteString(fmt.Sprintf("PS(%d,%d,15);", n-10, i-10))
-					}
-					if len(buf.String()) > 900 {
-						go Command("echo \"" + buf.String() + "\r\n\"> /dev/ttyS0")
-						buf.Reset() //清空缓存
-					}
-				}
-			}
+			ComDisplayQRCode(appConfig.ComDisplay)
 			cmd = exec.Command("echo") //没有实际用途，仅是为了统一处理后面的Kill
 		} else { // 在普通的Linux环境下运行
 			cmd = exec.Command("eog", QRFile)
@@ -169,8 +126,8 @@ func main() {
 			panicErr(err)
 
 			Log(logging.INFO, "通知完毕.")
-			Log(logging.DEBUG, e.SKey, loginMap.BaseRequest.SKey)
-			Log(logging.DEBUG, e.PassTicket, loginMap.PassTicket)
+			Log(logging.DEBUG, e.SKey, ": ", loginMap.BaseRequest.SKey)
+			Log(logging.DEBUG, e.PassTicket, ": ", loginMap.PassTicket)
 			break
 		} else if status == 201 {
 			Log(logging.NOTICE, "请在手机上确认")
@@ -182,7 +139,7 @@ func main() {
 	}
 
 	if runtime.GOARCH == "mipsle" {
-		go Command(`echo "CLS(0);\r\n"> /dev/ttyS0`)
+		go Command(fmt.Sprintf(`echo "CLS(0);\r\n"> %s`, appConfig.ComDisplay))
 	}
 	cmd.Process.Kill() //关闭显示的二维码图（Win下未生效）
 
@@ -197,51 +154,12 @@ func main() {
 	regAd := regexp.MustCompile(`(朋友圈|点赞)+`)
 
 	for {
-		//控制台命令 --------------------------------------------
-		select {
-		case MeChatString := <-chatString:
-			if strings.ToUpper(MeChatString) == "U" { // 列出用户
-				Log(logging.INFO, "列出用户.")
-				for i, n := range contactMap {
-					if strings.HasPrefix(i, "@@") == true { //先列出群
-						Log(logging.INFO, fmt.Sprintf("%s %-30s", i[:5], FilterName(n.NickName)))
-					}
-				}
-				for i, n := range contactMap {
-					if strings.HasPrefix(i, "@@") == false && contactMap[i].VerifyFlag != 24 { //再列出用户,公众号不显示
-						Log(logging.INFO, fmt.Sprintf("%s %-30s %s %s %s", i[:5], FilterName(n.NickName), iif(n.Sex == 1, "男", "女"), n.Province, n.City))
-					}
-				}
-			} else if strings.ToUpper(MeChatString) == "QUIT" { // 退出系统
-				Log(logging.INFO, "系统退出.")
-				close(chatString)
-				os.Exit(1)
-			} else if strings.HasPrefix(MeChatString, "@") { //指定发送人
-				if MeChatString[5:6] == ":" {
-					for i, _ := range contactMap {
-						if strings.HasPrefix(i[:5], MeChatString[0:5]) {
-							MeToUser = i
-							EchoMessage = Chat(&loginMap, 1, loginMap.SelfUserName, MeToUser, MeChatString[6:])
-							break
-						}
-					}
-				}
-			} else {
-				if MeToUser != "" {
-					_ = Chat(&loginMap, 1, loginMap.SelfUserName, MeToUser, MeChatString)
-					Log(logging.INFO, "我的消息：", MeChatString)
-				} else {
-					Log(logging.INFO, "不知道消息发向何处: ", MeChatString)
-				}
-			}
-		default:
-		}
+		CommandControl(&loginMap, contactMap) //控制台命令
 
 		// 获取微信信息 ----------------------------------------------------
 		retcode, selector, err = s.SyncCheck(&loginMap)
 		if err != nil {
-			log.Error("信息同步时出错.")
-			printErr(err)
+			Log(logging.ERROR, err.Error())
 			if retcode == 1101 {
 				Log(logging.INFO, "帐号已在其他地方登陆,程序将退出.")
 				os.Exit(2)
@@ -250,7 +168,6 @@ func main() {
 		}
 
 		if retcode == 0 && selector != 0 { // 有新消息产生
-			//fmt.Printf("selector=%d,有新消息产生,准备拉取...\n", selector)
 			wxRecvMsges, err := s.WebWxSync(&loginMap)
 			printErr(err)
 
@@ -269,19 +186,19 @@ func main() {
 					if regGroup.MatchString(wxRecvMsges.MsgList[i].FromUserName) && regAt.MatchString(wxRecvMsges.MsgList[i].Content) { // 有人在群里@我，发个消息回答一下
 						EchoMessage = Chat(&loginMap, 1, ToUserName, FromUserName, appConfig.AutoReplay_PrivateChat)
 					} else if !regGroup.MatchString(wxRecvMsges.MsgList[i].FromUserName) { //不在群里私聊我
+						_, ok := FunUser[FromUserName]
 						if regAd.MatchString(wxRecvMsges.MsgList[i].Content) { // 有人私聊我，并且内容含有「朋友圈」、「点赞」等敏感词，则回复
 							EchoMessage = Chat(&loginMap, 1, ToUserName, FromUserName, appConfig.AutoReplay_KeyFilter)
 						} else if strings.EqualFold(wxRecvMsges.MsgList[i].Content, appConfig.AutoReplay_FunKey) { // 有人私聊我，开启调戏功能
-							if AdminID == "" {
-								EchoMessage = fmt.Sprintf(appConfig.AutoReplay_PrivateFunction, "进入")
-								AdminID = wxRecvMsges.MsgList[i].FromUserName //设置为调戏开启用户
-							} else {
+							if ok {
 								EchoMessage = fmt.Sprintf(appConfig.AutoReplay_PrivateFunction, "退出")
-								AdminID = ""
+								delete(FunUser, FromUserName)
+							} else {
+								EchoMessage = fmt.Sprintf(appConfig.AutoReplay_PrivateFunction, "进入")
+								FunUser[FromUserName] = FromUserName
 							}
-
 							EchoMessage = Chat(&loginMap, 1, ToUserName, FromUserName, EchoMessage)
-						} else if AdminID == wxRecvMsges.MsgList[i].FromUserName { //已进入调戏模式
+						} else if ok { //已进入调戏模式
 							EchoMessage = Chat(&loginMap, 1, ToUserName, FromUserName, AI(wxRecvMsges.MsgList[i].Content))
 						}
 
@@ -353,6 +270,16 @@ func getMessage(logMap *m.LoginMap, content string, groupid string) (UserNickNam
 	return
 }
 
+func getUserName(logMap *m.LoginMap, userID string) (nickName string) {
+	if _, ok := UserInfoList[userID]; ok {
+		nickName = UserInfoList[userID]
+	} else {
+		nickName = s.GetUserName(logMap, userID)
+		UserInfoList[userID] = nickName
+	}
+	return
+}
+
 // AI机器人
 func AI(q string) string {
 	resp, err := http.Get("http://api.qingyunke.com/api.php?key=free&appid=0&msg=" + q)
@@ -400,6 +327,8 @@ func printErr(err error) {
 
 //获取命令行输入
 func getChat() {
+	chatString = make(chan string)
+
 	reader := bufio.NewReader(os.Stdin)
 	for {
 		data, _, _ := reader.ReadLine()
@@ -442,7 +371,7 @@ func Log(logType logging.Level, args ...string) {
 		var enc mahonia.Encoder
 		enc = mahonia.NewEncoder("gbk")
 		if ret, ok := enc.ConvertStringOK(strings.Join(args, "")); ok {
-			go Command(`echo "BOXF(0,0,220,52,0);BS16(1,1,220,3,'` + ret + `',15);\r\n"> /dev/ttyS0`)
+			go Command(fmt.Sprintf(`echo "BOXF(0,0,220,52,0);BS16(1,1,220,3,'`+ret+`',15);\r\n"> %s`, appConfig.ComDisplay))
 		}
 	}
 
@@ -467,13 +396,105 @@ func QuitSystem() {
 		for s := range c {
 			switch s {
 			case syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT:
-				Log(logging.INFO, "退出系统", s.String(), "\n\n")
+				Log(logging.INFO, "请求退出系统", s.String())
 				os.Remove(QRFile) //删除二维码文件
 				logFile.Close()   //关闭日志文件
+				Log(logging.INFO, "处理完毕,退出系统\n\n")
 				os.Exit(0)
 			default:
 				Log(logging.INFO, s.String())
 			}
 		}
 	}()
+}
+
+func logInit() {
+	format := logging.MustStringFormatter(`%{color}%{time:2006-01-02 15:04:05} %{level:.4s} %{id:03x}%{color:reset} %{message}`) //日志输出及格式
+
+	logFile, err = os.OpenFile(appConfig.LogFile, os.O_APPEND|os.O_CREATE, 0666)
+	panicErr(err)
+	backend1 := logging.NewLogBackend(logFile, "", 0)
+	backend2 := logging.NewLogBackend(os.Stderr, "", 0)
+	backend2Formatter := logging.NewBackendFormatter(backend2, format)
+	backend1Formatter := logging.NewBackendFormatter(backend1, format)
+	logging.SetBackend(backend1Formatter, backend2Formatter)
+}
+
+func confInit() {
+	conf := goini.SetConfig("./app.conf")
+	appConfig.AutoReplay_PrivateChat = conf.GetValue("chat", "PrivateChat")
+	appConfig.AutoReplay_KeyFilter = conf.GetValue("chat", "KeyFilter")
+	appConfig.AutoReplay_FunKey = conf.GetValue("chat", "FunKey")
+	appConfig.AutoReplay_PrivateFunction = conf.GetValue("chat", "PrivateFunction")
+	appConfig.LogFile = conf.GetValue("chat", "LogFile")
+	appConfig.ComDisplay = conf.GetValue("chat", "ComDisplay")
+}
+
+func ComDisplayQRCode(com string) {
+	time.Sleep(time.Second)
+	go Command(fmt.Sprintf(`stty -F %s raw 115200; echo "CLS(0);\r\n"> %`, com, com))
+	var buf bytes.Buffer
+	var r uint32
+
+	Log(logging.NOTICE, "二维码处理中...")
+	src, err := LoadImage(QRFile)
+	panicErr(err)
+	dst := resize.Resize(200, 200, src, resize.Lanczos2) // 缩略图的大小。我的串口屏只有220*176
+
+	for i := 10; i < 190; i++ {
+		for n := 10; n < 190; n++ {
+			r, _, _, _ = dst.At(i, n).RGBA() //获取某点颜色
+			if r > 50000 {                   // 简单判断是否是有色点
+				buf.WriteString(fmt.Sprintf("PS(%d,%d,15);", n-10, i-10))
+			}
+			if len(buf.String()) > 900 {
+				go Command("echo \"" + buf.String() + "\r\n\"> " + com)
+				buf.Reset() //清空缓存
+			}
+		}
+	}
+}
+
+func CommandControl(loginMap *m.LoginMap, contactMap map[string]m.User) {
+	select {
+	case MeChatString := <-chatString:
+		if strings.ToUpper(MeChatString) == "U" { // 列出用户
+			Log(logging.INFO, "列出用户.")
+			for i, n := range contactMap {
+				if strings.HasPrefix(i, "@@") == true { //先列出群
+					Log(logging.INFO, fmt.Sprintf("%s %-30s", i[:5], FilterName(n.NickName)))
+				}
+			}
+			for i, n := range contactMap {
+				if strings.HasPrefix(i, "@@") == false && contactMap[i].VerifyFlag != 24 { //再列出用户,公众号不显示
+					Log(logging.INFO, fmt.Sprintf("%s %-30s %s %s %s", i[:5], FilterName(n.NickName), iif(n.Sex == 1, "男", "女"), n.Province, n.City))
+				}
+			}
+		} else if strings.ToUpper(MeChatString) == "QUIT" { // 退出系统
+			Log(logging.INFO, "系统退出.")
+			close(chatString)
+			os.Exit(1)
+		} else if strings.HasPrefix(MeChatString, "@") { //指定发送人
+			if MeChatString[5:6] == ":" {
+				for i, _ := range contactMap {
+					if strings.HasPrefix(i[:5], MeChatString[0:5]) {
+						MeToUser = i
+						em := Chat(loginMap, 1, loginMap.SelfUserName, MeToUser, MeChatString[6:])
+						Log(logging.INFO, fmt.Sprintf("我发给%s的消息：%s", getUserName(loginMap, MeToUser), em))
+						break
+					}
+				}
+			}
+		} else {
+			if MeToUser != "" {
+				em := Chat(loginMap, 1, loginMap.SelfUserName, MeToUser, MeChatString)
+				Log(logging.INFO, fmt.Sprintf("我发给%s的消息：%s", getUserName(loginMap, MeToUser), em))
+			} else {
+				Log(logging.INFO, "不知道消息发向何处: ", MeChatString)
+			}
+		}
+		return
+	default:
+		return
+	}
 }
