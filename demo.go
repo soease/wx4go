@@ -27,32 +27,31 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"regexp"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 )
 
 var (
 	err          error
+	QRFile       string            //二维码文件
 	appConfig    AppConfig         //系统配置
 	UserInfoList map[string]string //把用户信息存起来
 	chatString   chan string
 	logFile      *os.File
-
-	logFileName = "./log.txt"
-	QRFile      = "./qrcode.jpg"
-	log         = logging.MustGetLogger("example")
-	format      = logging.MustStringFormatter(`%{color}%{time:2006-01-02 15:04:05} %{level:.4s} %{id:03x}%{color:reset} %{message}`)
+	log          = logging.MustGetLogger("example")
 )
 
-//配置
-type AppConfig struct {
+type AppConfig struct { //配置
 	AutoReplay_PrivateChat     string //私聊自动回复
 	AutoReplay_KeyFilter       string //屏蔽关键词
 	AutoReplay_FunKey          string //调戏功能关键词
 	AutoReplay_PrivateFunction string //私人功能定义
 	COMScreen                  bool   //串口屏上显示二维码
+	LogFile                    string //日志文件
 }
 
 type InfoRet struct { //AI返回信息解析
@@ -62,8 +61,19 @@ type InfoRet struct { //AI返回信息解析
 
 //读取配置文件
 func init() {
+	//系统配置
+	conf := goini.SetConfig("./app.conf")
+	appConfig.AutoReplay_PrivateChat = conf.GetValue("chat", "PrivateChat")
+	appConfig.AutoReplay_KeyFilter = conf.GetValue("chat", "KeyFilter")
+	appConfig.AutoReplay_FunKey = conf.GetValue("chat", "FunKey")
+	appConfig.AutoReplay_PrivateFunction = conf.GetValue("chat", "PrivateFunction")
+	appConfig.LogFile = conf.GetValue("chat", "LogFile")
+	UserInfoList = make(map[string]string)
+
 	//日志输出及格式
-	logFile, err = os.OpenFile(logFileName, os.O_APPEND|os.O_CREATE, 0666)
+	format := logging.MustStringFormatter(`%{color}%{time:2006-01-02 15:04:05} %{level:.4s} %{id:03x}%{color:reset} %{message}`)
+
+	logFile, err = os.OpenFile(appConfig.LogFile, os.O_APPEND|os.O_CREATE, 0666)
 	panicErr(err)
 	backend1 := logging.NewLogBackend(logFile, "", 0)
 	backend2 := logging.NewLogBackend(os.Stderr, "", 0)
@@ -71,16 +81,12 @@ func init() {
 	backend1Formatter := logging.NewBackendFormatter(backend1, format)
 	logging.SetBackend(backend1Formatter, backend2Formatter)
 
-	//系统配置
-	conf := goini.SetConfig("./app.conf")
-	appConfig.AutoReplay_PrivateChat = conf.GetValue("chat", "PrivateChat")
-	appConfig.AutoReplay_KeyFilter = conf.GetValue("chat", "KeyFilter")
-	appConfig.AutoReplay_FunKey = conf.GetValue("chat", "FunKey")
-	appConfig.AutoReplay_PrivateFunction = conf.GetValue("chat", "PrivateFunction")
-	UserInfoList = make(map[string]string)
-
+	//命令行输入信息
 	chatString = make(chan string)
 	go getChat()
+
+	//系统退出处理
+	QuitSystem()
 }
 
 func main() {
@@ -95,16 +101,19 @@ func main() {
 		ToUserName   string
 		FromUserName string
 		MeToUser     string //主动发送信息到用户
+		retcode      int64  //微信信息反馈
+		selector     int64  //微信信息反馈
+
 	)
 
 	Log(logging.INFO, "系统启动中,运行环境:", runtime.GOOS, runtime.GOARCH)
-	// 从微信服务器获取UUID
+
+	// 从微信服务器获取UUID  ------------------------------------------------------
 	uuid, err := s.GetUUIDFromWX()
 	panicErr(err)
 
 	Log(logging.INFO, "获取二维码...")
-	// 根据UUID获取二维码
-	err = s.DownloadImagIntoDir(e.QRCODE_URL+uuid, ".")
+	QRFile, err = s.DownloadImagIntoDir(e.QRCODE_URL + uuid) // 根据UUID获取二维码
 	panicErr(err)
 
 	Log(logging.INFO, "显示二维码...")
@@ -118,12 +127,12 @@ func main() {
 			Log(logging.NOTICE, "二维码处理中...")
 			src, err := LoadImage(QRFile)
 			panicErr(err)
-			dst := resize.Resize(200, 200, src, resize.Lanczos2) // 缩略图的大小
+			dst := resize.Resize(200, 200, src, resize.Lanczos2) // 缩略图的大小。我的串口屏只有220*176
 
 			for i := 10; i < 190; i++ {
 				for n := 10; n < 190; n++ {
-					r, _, _, _ = dst.At(i, n).RGBA()
-					if r > 50000 {
+					r, _, _, _ = dst.At(i, n).RGBA() //获取某点颜色
+					if r > 50000 {                   // 简单判断是否是有色点
 						buf.WriteString(fmt.Sprintf("PS(%d,%d,15);", n-10, i-10))
 					}
 					if len(buf.String()) > 900 {
@@ -133,39 +142,15 @@ func main() {
 				}
 			}
 			cmd = exec.Command("echo") //没有实际用途，仅是为了统一处理后面的Kill
-		} else {
-			// 在普通的Linux环境下运行
+		} else { // 在普通的Linux环境下运行
 			cmd = exec.Command("eog", QRFile)
-
-			/*
-				var r uint32
-				src, err := LoadImage(QRFile)
-				panicErr(err)
-				// 缩略图的大小
-				dst := resize.Resize(430, 430, src, resize.Lanczos2)
-				for i := 0; i < 430; i++ {
-					for n := 0; n < 430; n++ {
-						r, _, _, _ = dst.At(i, n).RGBA()
-						//fmt.Print(r, " ")
-
-						if r > 50000 {
-							fmt.Print("█")
-						} else {
-							fmt.Print(" ")
-						}
-					}
-					fmt.Print("\n")
-				}
-				cmd = exec.Command("echo")
-			*/
 		}
-	} else if runtime.GOOS == "windows" {
-		// 在windows环境中运行
+	} else if runtime.GOOS == "windows" { // 在windows环境中运行
 		cmd = exec.Command("cmd", "/c start "+QRFile)
 	}
 	cmd.Start()
 
-	// 轮询服务器判断二维码是否扫过暨是否登陆了
+	// 轮询服务器判断二维码是否扫过暨是否登陆  ----------------------------------------
 	for {
 		Log(logging.NOTICE, "正在验证登陆...")
 		status, msg := s.CheckLogin(uuid)
@@ -200,23 +185,22 @@ func main() {
 		go Command(`echo "CLS(0);\r\n"> /dev/ttyS0`)
 	}
 	cmd.Process.Kill() //关闭显示的二维码图（Win下未生效）
+
+	// 扫码成功 ----------------------------------------------
 	Log(logging.INFO, "开始获取联系人信息...")
 	contactMap, err = s.GetAllContact(&loginMap)
 	panicErr(err)
-	Log(logging.INFO, fmt.Sprintf("成功获取 %d个 联系人信息,开始整理群组信息...", len(contactMap)))
-
+	Log(logging.INFO, fmt.Sprintf("成功获取 %d个 联系人信息。", len(contactMap)))
 	Log(logging.INFO, "开始监听消息响应...")
-	var retcode, selector int64
 	regAt := regexp.MustCompile(`^@.*@.*(易云辉|ease).*$`) // 群聊时其他人说话时会在前面加上@XXX
 	regGroup := regexp.MustCompile(`^@@.+`)
 	regAd := regexp.MustCompile(`(朋友圈|点赞)+`)
 
 	for {
-
-		//控制台命令
+		//控制台命令 --------------------------------------------
 		select {
 		case MeChatString := <-chatString:
-			if strings.ToUpper(MeChatString) == "U" {
+			if strings.ToUpper(MeChatString) == "U" { // 列出用户
 				Log(logging.INFO, "列出用户.")
 				for i, n := range contactMap {
 					if strings.HasPrefix(i, "@@") == true { //先列出群
@@ -228,7 +212,7 @@ func main() {
 						Log(logging.INFO, fmt.Sprintf("%s %-30s %s %s %s", i[:5], FilterName(n.NickName), iif(n.Sex == 1, "男", "女"), n.Province, n.City))
 					}
 				}
-			} else if strings.ToUpper(MeChatString) == "QUIT" {
+			} else if strings.ToUpper(MeChatString) == "QUIT" { // 退出系统
 				Log(logging.INFO, "系统退出.")
 				close(chatString)
 				os.Exit(1)
@@ -253,25 +237,26 @@ func main() {
 		default:
 		}
 
+		// 获取微信信息 ----------------------------------------------------
 		retcode, selector, err = s.SyncCheck(&loginMap)
 		if err != nil {
-			//log.Error(retcode, selector)
+			log.Error("信息同步时出错.")
 			printErr(err)
 			if retcode == 1101 {
-				Log(logging.INFO, "帐号已在其他地方登陆，程序将退出。")
+				Log(logging.INFO, "帐号已在其他地方登陆,程序将退出.")
 				os.Exit(2)
 			}
 			continue
 		}
 
-		if retcode == 0 && selector != 0 {
+		if retcode == 0 && selector != 0 { // 有新消息产生
 			//fmt.Printf("selector=%d,有新消息产生,准备拉取...\n", selector)
 			wxRecvMsges, err := s.WebWxSync(&loginMap)
 			printErr(err)
 
 			for i := 0; i < wxRecvMsges.MsgCount; i++ {
-				ToUserName = wxRecvMsges.MsgList[i].ToUserName
-				FromUserName = wxRecvMsges.MsgList[i].FromUserName
+				ToUserName = wxRecvMsges.MsgList[i].ToUserName     //接收人
+				FromUserName = wxRecvMsges.MsgList[i].FromUserName //发送人
 
 				if regGroup.MatchString(wxRecvMsges.MsgList[i].FromUserName) { //是否在群中
 					UserNickName, Message = getMessage(&loginMap, wxRecvMsges.MsgList[i].Content, wxRecvMsges.MsgList[i].FromUserName)
@@ -281,15 +266,12 @@ func main() {
 				if wxRecvMsges.MsgList[i].MsgType == 1 { // 普通文本消息
 					Log(logging.INFO, contactMap[wxRecvMsges.MsgList[i].FromUserName].NickName, ":", Message)
 
-					if regGroup.MatchString(wxRecvMsges.MsgList[i].FromUserName) && regAt.MatchString(wxRecvMsges.MsgList[i].Content) {
-						// 有人在群里@我，发个消息回答一下
+					if regGroup.MatchString(wxRecvMsges.MsgList[i].FromUserName) && regAt.MatchString(wxRecvMsges.MsgList[i].Content) { // 有人在群里@我，发个消息回答一下
 						EchoMessage = Chat(&loginMap, 1, ToUserName, FromUserName, appConfig.AutoReplay_PrivateChat)
-					} else if !regGroup.MatchString(wxRecvMsges.MsgList[i].FromUserName) { //不在群里
-						if regAd.MatchString(wxRecvMsges.MsgList[i].Content) {
-							// 有人私聊我，并且内容含有「朋友圈」、「点赞」等敏感词，则回复
+					} else if !regGroup.MatchString(wxRecvMsges.MsgList[i].FromUserName) { //不在群里私聊我
+						if regAd.MatchString(wxRecvMsges.MsgList[i].Content) { // 有人私聊我，并且内容含有「朋友圈」、「点赞」等敏感词，则回复
 							EchoMessage = Chat(&loginMap, 1, ToUserName, FromUserName, appConfig.AutoReplay_KeyFilter)
-						} else if strings.EqualFold(wxRecvMsges.MsgList[i].Content, appConfig.AutoReplay_FunKey) {
-							// 有人私聊我，开启调戏功能
+						} else if strings.EqualFold(wxRecvMsges.MsgList[i].Content, appConfig.AutoReplay_FunKey) { // 有人私聊我，开启调戏功能
 							if AdminID == "" {
 								EchoMessage = fmt.Sprintf(appConfig.AutoReplay_PrivateFunction, "进入")
 								AdminID = wxRecvMsges.MsgList[i].FromUserName //设置为调戏开启用户
@@ -466,7 +448,7 @@ func Log(logType logging.Level, args ...string) {
 
 }
 
-// Load Image decodes an image from a file of image.
+//Load Image decodes an image from a file of image.
 func LoadImage(path string) (img image.Image, err error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -475,4 +457,23 @@ func LoadImage(path string) (img image.Image, err error) {
 	defer file.Close()
 	img, err = jpeg.Decode(file)
 	return
+}
+
+//退出系统
+func QuitSystem() {
+	c := make(chan os.Signal)                                                          //创建监听退出chan
+	signal.Notify(c, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT) //监听指定信号 ctrl+c kill
+	go func() {
+		for s := range c {
+			switch s {
+			case syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT:
+				Log(logging.INFO, "退出系统", s.String(), "\n\n")
+				os.Remove(QRFile) //删除二维码文件
+				logFile.Close()   //关闭日志文件
+				os.Exit(0)
+			default:
+				Log(logging.INFO, s.String())
+			}
+		}
+	}()
 }

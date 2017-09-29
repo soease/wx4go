@@ -23,6 +23,8 @@ MT7688+串口屏上的效果：
 - 图片缩放 github.com/nfnt/resize
 
 ## 更新
+- 2017.9.29 代码整理.将二维码文件放入临时文件夹中
+- 2017.9.29 处理Ctrl+C等系统中断，并善后处理
 - 2017.9.26 将引用包压缩到项目中
 - 2017.9.26 支持运行在MT7688，显示二维码到串口屏
 - 2017.9.23 支持对指定群或用户聊天（@xxxx:xxxx,指定对象后可直接输入聊天内容)
@@ -69,6 +71,27 @@ MT7688+串口屏上的效果：
         }
         fmt.Println("")
     }
+
+    // 也可以用下面这种，速度更快。有变形，但二维码还是能扫描。
+    var r uint32
+    src, err := LoadImage(QRFile)
+    panicErr(err)
+    // 缩略图的大小
+    dst := resize.Resize(430, 430, src, resize.Lanczos2)
+    for i := 0; i < 430; i++ {
+        for n := 0; n < 430; n++ {
+            r, _, _, _ = dst.At(i, n).RGBA()
+
+            if r > 50000 {
+                fmt.Print("█")
+            } else {
+                fmt.Print(" ")
+            }
+        }
+        fmt.Print("\n")
+    }
+    cmd = exec.Command("echo")
+
 ```                
 
 - 将imgo库换为原装库,虽然看起来二维码有些变化,但好在没有影响扫码.而速度在MT7688上减少了六十多秒的图片缩小处理时间.

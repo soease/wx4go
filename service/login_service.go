@@ -1,6 +1,8 @@
 package service
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
@@ -53,27 +55,23 @@ func GetUUIDFromWX() (string, error) {
 }
 
 /* 下载URL指向的JPG，保存到指定路径下的qrcode.jpg文件 */
-func DownloadImagIntoDir(url string, dirPath string) error {
+func DownloadImagIntoDir(url string) (string, error) {
 	//检查并创建临时目录
-	if !isDirExist(dirPath) {
-		os.Mkdir(dirPath, 0755)
-		fmt.Println("dir %s created", dirPath)
-	}
-
+	filename := TempFileName("", ".jpg")
 	resp, err := http.Get(url)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer resp.Body.Close()
 
-	dst, err := os.Create(dirPath + "/qrcode.jpg")
+	dst, err := os.Create(filename)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer dst.Close()
 
 	_, err = io.Copy(dst, resp.Body)
-	return err
+	return filename, err
 
 	//pix, err := ioutil.ReadAll(resp.Body)
 	//return pix, err
@@ -256,3 +254,15 @@ func isDirExist(path string) bool {
  * </error>
  *
  */
+
+//建立一个临时文件
+func TempFileName(prefix, suffix string) string {
+	dirPath := os.TempDir()
+	if !isDirExist(dirPath) {
+		dirPath = "."
+	}
+
+	randBytes := make([]byte, 16)
+	rand.Read(randBytes)
+	return dirPath + "/" + prefix + hex.EncodeToString(randBytes) + suffix
+}
