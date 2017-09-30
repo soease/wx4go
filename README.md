@@ -23,6 +23,7 @@ MT7688+串口屏上的效果：
 - 配置文件 github.com/widuu/goini
 - UTF8转GBK code.google.com/p/mahonia
 - 图片缩放 github.com/nfnt/resize
+- 网页分析 github.com/PuerkitoBio/goquery (用于AI等)
 
 ## 更新
 - 2017.9.30 分享链接信息的处理

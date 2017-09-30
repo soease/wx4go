@@ -1,12 +1,22 @@
 package tools
 
 import (
+	"encoding/json"
 	"fmt"
+	"github.com/PuerkitoBio/goquery"
+	"io/ioutil"
 	"math/rand"
+	"net/http"
 	"net/url"
+	"os/exec"
 	"strings"
 	"time"
 )
+
+type InfoRet struct { //AI返回信息解析
+	Result  int    `json:"result"`
+	Content string `json:"content"`
+}
 
 /**
  * 有序(或者无序)地从一个map中按照index的顺序构造URL中的params
@@ -62,4 +72,59 @@ func Html2Txt(content string) string {
 	c = strings.Replace(c, "&nbsp;", " ", -1)
 	c = strings.Replace(c, "&quot;", "\"", -1)
 	return c
+}
+
+//Linux Shell
+func Command(cmd string) {
+	c := exec.Command("ash", "-c", cmd)
+	c.Start()
+}
+
+func Iif(sour bool, ret1 string, ret2 string) string {
+	if sour {
+		return ret1
+	} else {
+		return ret2
+	}
+}
+
+// AI机器人
+func AI(q string) string {
+	resp, err := http.Get("http://api.qingyunke.com/api.php?key=free&appid=0&msg=" + q)
+	if err != nil {
+		return ""
+	} else {
+		defer resp.Body.Close()
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return ""
+		} else {
+			atr := InfoRet{}
+			json.Unmarshal(body, &atr)
+			return strings.Replace(atr.Content, "{br}", "\n", -1)
+		}
+	}
+}
+
+//成都限行信息
+func ChengDuCar() (ret string) {
+	url := "https://www.baidu.com/s?wd=%E6%88%90%E9%83%BD%E9%99%90%E8%A1%8C"
+	client := http.Client{}
+	request, err := http.NewRequest("GET", url, nil)
+	request.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:56.0) Gecko/20100101 Firefox/56.0")
+	response, err := client.Do(request)
+	if err != nil {
+		return
+	}
+	defer response.Body.Close()
+	if response.StatusCode == 200 {
+		doc, err := goquery.NewDocumentFromResponse(response)
+		if err != nil {
+			return
+		}
+		doc.Find(".c-border .op_traffic_time .op_traffic_left").Each(func(i int, s *goquery.Selection) {
+			ret = "成都" + strings.Replace(s.Find(".op_traffic_title").Text(), "限行", s.Find(".op_traffic_off").Text(), -1)
+		})
+	}
+	return
 }

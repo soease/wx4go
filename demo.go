@@ -12,7 +12,6 @@ import (
 	"bufio"
 	"bytes"
 	"code.google.com/p/mahonia"
-	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"github.com/nfnt/resize"
@@ -24,8 +23,6 @@ import (
 	"github.com/widuu/goini"
 	"image"
 	"image/jpeg"
-	"io/ioutil"
-	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -56,11 +53,6 @@ type AppConfig struct { //配置
 	ComDisplay                 string //串口屏位置
 	FilterKey                  string //屏蔽关键词
 	ChatAt                     string //聊天对象
-}
-
-type InfoRet struct { //AI返回信息解析
-	Result  int    `json:"result"`
-	Content string `json:"content"`
 }
 
 //读取配置文件
@@ -146,7 +138,7 @@ func main() {
 	}
 
 	if runtime.GOARCH == "mipsle" {
-		go Command(fmt.Sprintf(`echo "CLS(0);\r\n"> %s`, appConfig.ComDisplay))
+		go tools.Command(fmt.Sprintf(`echo "CLS(0);\r\n"> %s`, appConfig.ComDisplay))
 	}
 	cmd.Process.Kill() //关闭显示的二维码图（Win下未生效）
 
@@ -205,7 +197,12 @@ func main() {
 							}
 							EchoMessage = Chat(&loginMap, 1, ToUserName, FromUserName, EchoMessage)
 						} else if ok { //已进入调戏模式
-							EchoMessage = Chat(&loginMap, 1, ToUserName, FromUserName, AI(Content))
+							EchoMessage = CheckAI(Content)
+							if EchoMessage == "" {
+								EchoMessage = Chat(&loginMap, 1, ToUserName, FromUserName, tools.AI(Content))
+							} else {
+								Chat(&loginMap, 1, ToUserName, FromUserName, EchoMessage)
+							}
 						}
 
 					}
@@ -286,24 +283,6 @@ func getUserName(logMap *m.LoginMap, userID string) (nickName string) {
 	return
 }
 
-// AI机器人
-func AI(q string) string {
-	resp, err := http.Get("http://api.qingyunke.com/api.php?key=free&appid=0&msg=" + q)
-	if err != nil {
-		return ""
-	} else {
-		defer resp.Body.Close()
-		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return ""
-		} else {
-			atr := InfoRet{}
-			json.Unmarshal(body, &atr)
-			return strings.Replace(atr.Content, "{br}", "\n", -1)
-		}
-	}
-}
-
 //聊天
 func Chat(logMap *m.LoginMap, chatType int, FromUser, ToUser, Content string) string {
 	wxSendMsg := m.WxSendMsg{}
@@ -349,24 +328,10 @@ func getChat() {
 	}
 }
 
-func iif(sour bool, ret1 string, ret2 string) string {
-	if sour {
-		return ret1
-	} else {
-		return ret2
-	}
-}
-
 //过滤用户昵称中的符号
 func FilterName(name string) []byte {
 	var nameRegexp = regexp.MustCompile("\\<[\\S\\s]+?\\>")
 	return nameRegexp.ReplaceAll([]byte(name), []byte(""))
-}
-
-//Linux Shell
-func Command(cmd string) {
-	c := exec.Command("ash", "-c", cmd)
-	c.Start()
 }
 
 //日志功能
@@ -386,7 +351,7 @@ func Log(logType logging.Level, args ...string) {
 		var enc mahonia.Encoder
 		enc = mahonia.NewEncoder("gbk")
 		if ret, ok := enc.ConvertStringOK(strings.Join(args, "")); ok {
-			go Command(fmt.Sprintf(`echo "BOXF(0,0,220,52,0);BS16(1,1,220,3,'`+ret+`',15);\r\n"> %s`, appConfig.ComDisplay))
+			go tools.Command(fmt.Sprintf(`echo "BOXF(0,0,220,52,0);BS16(1,1,220,3,'`+ret+`',15);\r\n"> %s`, appConfig.ComDisplay))
 		}
 	}
 
@@ -452,7 +417,7 @@ func confInit() {
 //通过串口屏显示二维码
 func ComDisplayQRCode(com string) {
 	time.Sleep(time.Second)
-	go Command(fmt.Sprintf(`stty -F %s raw 115200; echo "CLS(0);\r\n"> %`, com, com))
+	go tools.Command(fmt.Sprintf(`stty -F %s raw 115200; echo "CLS(0);\r\n"> %`, com, com))
 	var buf bytes.Buffer
 	var r uint32
 
@@ -468,7 +433,7 @@ func ComDisplayQRCode(com string) {
 				buf.WriteString(fmt.Sprintf("PS(%d,%d,15);", n-10, i-10))
 			}
 			if len(buf.String()) > 900 {
-				go Command("echo \"" + buf.String() + "\r\n\"> " + com)
+				go tools.Command("echo \"" + buf.String() + "\r\n\"> " + com)
 				buf.Reset() //清空缓存
 			}
 		}
@@ -488,7 +453,7 @@ func CommandControl(loginMap *m.LoginMap, contactMap map[string]m.User) {
 			}
 			for i, n := range contactMap {
 				if strings.HasPrefix(i, "@@") == false && contactMap[i].VerifyFlag != 24 { //再列出用户,公众号不显示
-					Log(logging.INFO, fmt.Sprintf("%s %-30s %s %s %s", i[:5], FilterName(n.NickName), iif(n.Sex == 1, "男", "女"), n.Province, n.City))
+					Log(logging.INFO, fmt.Sprintf("%s %-30s %s %s %s", i[:5], FilterName(n.NickName), tools.Iif(n.Sex == 1, "男", "女"), n.Province, n.City))
 				}
 			}
 		} else if strings.ToUpper(MeChatString) == "QUIT" { // 退出系统
@@ -518,4 +483,14 @@ func CommandControl(loginMap *m.LoginMap, contactMap map[string]m.User) {
 	default:
 		return
 	}
+}
+
+// 给AI扩充一些实用功能
+func CheckAI(con string) (ret string) {
+	if con == "成都限行" {
+		ret = tools.ChengDuCar()
+	} else if con == "新闻" {
+		ret = "程序放假中..."
+	}
+	return
 }
