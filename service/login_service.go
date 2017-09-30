@@ -192,9 +192,13 @@ func InitWX(loginMap *m.LoginMap) error {
 	loginMap.SelfUserName = initInfo.User.UserName
 
 	/* 组装synckey */
+	//fmt.Println(string(bodyBytes))
 	if initInfo.SyncKeys.Count < 1 {
-		fmt.Println(string(bodyBytes))
-		return errors.New("微信返回的数据有误")
+		if initInfo.BaseRet.Ret == 1100 {
+			return errors.New("登陆失败")
+		} else {
+			return errors.New("微信返回的数据有误")
+		}
 	} else {
 		//fmt.Println(string(bodyBytes))
 	}

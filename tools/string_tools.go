@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -50,4 +51,15 @@ func GetRandomString(index int, length int) string {
 		result = append(result, bytes[r.Intn(index)])
 	}
 	return string(result)
+}
+
+//转换网页代码
+func Html2Txt(content string) string {
+	c := strings.Replace(content, "<br/>", "\n", -1)
+	c = strings.Replace(c, "&lt;", "<", -1)
+	c = strings.Replace(c, "&gt;", ">", -1)
+	c = strings.Replace(c, "&amp;", "&", -1)
+	c = strings.Replace(c, "&nbsp;", " ", -1)
+	c = strings.Replace(c, "&quot;", "\"", -1)
+	return c
 }

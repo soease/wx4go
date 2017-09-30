@@ -36,6 +36,7 @@ type BaseRequest struct {
 
 /* 微信初始化时返回的大JSON，选择性地提取一些关键数据 */
 type InitInfo struct {
+	BaseRet  BaseResponse     `json:"BaseResponse"`
 	User     User             `json:"User"`
 	SyncKeys SyncKeysJsonData `json:"SyncKey"`
 }
@@ -438,4 +439,68 @@ type PicInfo struct {
 type PicInfo_Img struct {
 	Url string `xml:"cdnthumburl,attr"`
 	Key string `xml:"cdnthumbaeskey,attr"`
+}
+
+//链接分享信息
+/*
+<msg>
+   <appmsg appid="" sdkver="0">
+     <title>九月，再见；十月，你好！</title>
+     <des>诗词天地，倡导诗意生活态度。</des>
+     <action></action>
+     <type>5</type>
+     <showtype>0</showtype>
+     <soundtype>0</soundtype>
+     <mediatagname></mediatagname>
+     <messageext></messageext>
+     <messageaction></messageaction>
+     <content></content>
+     <contentattr>0</contentattr>
+     <url>http://mp.weixin.qq.com/s?__biz=MzI2NDI3ODk0OQ==&amp;amp;mid=2247499056&amp;amp;idx=1&amp;amp;sn=fc565800b9c44797d07cca03d718cf76&amp;amp;chksm=eaadbbfaddda32ece08af9acb79640cbd5745881b25e4e6f22f54d4ba0d3a269dcc672cde877&amp;amp;mpshare=1&amp;amp;scene=1&amp;amp;srcid=0930e7NeLvI1ohyYTmRSnlgO#rd</url>
+     <lowurl></lowurl>
+     <dataurl></dataurl>
+     <lowdataurl></lowdataurl>
+     <appattach>
+       <totallen>0</totallen>
+       <attachid></attachid>
+       <emoticonmd5></emoticonmd5>
+       <fileext></fileext>
+       <cdnthumburl>304c02010004453043020100020428a112bf02030f48810204a0b28cb6020459cee81e0421777869645f3435726c3830763571736d6f32323733335f313530363733323035330201000201000400</cdnthumburl>
+       <cdnthumbmd5>6d57e7c7bd5bf8f2de9256799af8e8d9</cdnthumbmd5>
+       <cdnthumblength>7052</cdnthumblength>
+       <cdnthumbwidth>160</cdnthumbwidth>
+       <cdnthumbheight>160</cdnthumbheight>
+       <cdnthumbaeskey>62363135353164326432666634643764</cdnthumbaeskey>
+       <aeskey>62363135353164326432666634643764</aeskey>
+       <encryver>0</encryver>
+     </appattach>
+     <extinfo></extinfo>
+     <sourceusername>gh_99766370ece6</sourceusername>
+     <sourcedisplayname>诗词天地</sourcedisplayname>
+     <thumburl>http://mmbiz.qpic.cn/mmbiz_jpg/r5ibYXKmn8p1qaoR9Wmj52bjic2KlF8rvCJ1Au9mesTYUGhEGkDhYmAOlGGj41B18QePRLndBMCbokGYYdlAJoibw/300?wx_fmt=jpeg&amp;amp;wxfrom=1</thumburl>
+     <md5></md5>
+     <statextstr></statextstr>
+   </appmsg>
+
+   <fromusername>wxid_ugbdc6082hjx11</fromusername>
+   <scene>0</scene>
+   <appinfo>
+     <version>1</version>
+     <appname></appname>
+   </appinfo>
+   <commenturl></commenturl>
+ </msg>
+*/
+
+type LinkInfo struct {
+	XMLName  xml.Name     `xml:"msg"` /* 根节点定义 */
+	Msg      LinkInfo_msg `xml:"appmsg"`
+	FromUser string       `xml:"fromusername"`
+}
+
+type LinkInfo_msg struct {
+	Title    string `xml:"title"`
+	Desc     string `xml:"des"`
+	InfoType int    `xml:"type"`
+	Url      string `xml:"url"`
 }
