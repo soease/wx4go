@@ -60,7 +60,7 @@ func init() {
 	confInit()   //系统配置
 	logInit()    //日志初始化
 	go getChat() //命令行输入信息
-	QuitSystem() //系统退出处理
+	KeyControl() //按键处理
 }
 
 func main() {
@@ -98,6 +98,9 @@ func main() {
 		if runtime.GOARCH == "mipsle" { // 在MT7688中运行
 			ComDisplayQRCode(appConfig.ComDisplay)
 			cmd = exec.Command("echo") //没有实际用途，仅是为了统一处理后面的Kill
+		} else if runtime.GOARCH == "arm" {
+			commandLineDisplay()
+			cmd = exec.Command("echo")
 		} else { // 在普通的Linux环境下运行
 			cmd = exec.Command("eog", QRFile)
 		}
@@ -158,7 +161,7 @@ func main() {
 			Log(logging.ERROR, err.Error())
 			if retcode == 1101 {
 				Log(logging.INFO, "帐号已在其他地方登陆,程序将退出.")
-				os.Exit(2)
+				ExitSystem()
 			}
 			continue
 		}
@@ -179,12 +182,17 @@ func main() {
 					Message = Content
 				}
 				if MsgType == 1 { // 普通文本消息
-					Log(logging.INFO, contactMap[FromUserName].NickName, ":", Message)
+					_, ok := contactMap[FromUserName]
+					if ok {
+						Log(logging.INFO, contactMap[FromUserName].NickName, ":", Message)
+					} else {
+						Log(logging.INFO, getUserName(&loginMap, FromUserName), ":", Message)
+					}
 
 					if regGroup.MatchString(wxRecvMsges.MsgList[i].FromUserName) && regAt.MatchString(Content) { // 有人在群里@我，发个消息回答一下
 						EchoMessage = Chat(&loginMap, 1, ToUserName, FromUserName, appConfig.AutoReplay_PrivateChat)
 					} else if !regGroup.MatchString(FromUserName) { //不在群里私聊我
-						_, ok := FunUser[FromUserName]
+						_, ok = FunUser[FromUserName]
 						if regAd.MatchString(Content) { // 有人私聊我，并且内容含有「朋友圈」、「点赞」等敏感词，则回复
 							EchoMessage = Chat(&loginMap, 1, ToUserName, FromUserName, appConfig.AutoReplay_FilterKey)
 						} else if strings.EqualFold(Content, appConfig.AutoReplay_FunKey) { // 有人私聊我，开启调戏功能
@@ -204,20 +212,19 @@ func main() {
 								Chat(&loginMap, 1, ToUserName, FromUserName, EchoMessage)
 							}
 						}
-
 					}
 				} else if MsgType == 3 { //图片消息
 					picXML := m.PicInfo{}
 					err = xml.Unmarshal([]byte(tools.Html2Txt(Message)), &picXML)
 					Log(logging.INFO, contactMap[FromUserName].NickName, ": ", UserNickName, ": 发了一张图片 ", PicUrl(wxRecvMsges.MsgList[i].MsgId))
 				} else if MsgType == 34 { //语音消息
-					Log(logging.INFO, contactMap[FromUserName].NickName, ": ", strings.Split(Content, ":<br/>")[0], ": 发了一个语音信息")
+					Log(logging.INFO, contactMap[FromUserName].NickName, ": ", getUserName(&loginMap, strings.Split(Content, ":<br/>")[0]), " 发了一个语音信息")
 				} else if MsgType == 42 { //共享名片
 
 				} else if MsgType == 43 { //视频消息
-					Log(logging.INFO, contactMap[FromUserName].NickName, ": ", strings.Split(Content, ":<br/>")[0], ": 发了一个视频")
+					Log(logging.INFO, contactMap[FromUserName].NickName, ": ", getUserName(&loginMap, strings.Split(Content, ":<br/>")[0]), " 发了一个视频")
 				} else if MsgType == 47 { //动画表情
-					Log(logging.INFO, contactMap[FromUserName].NickName, ": ", strings.Split(Content, ":<br/>")[0], ": 发了一个发情")
+					Log(logging.INFO, contactMap[FromUserName].NickName, ": ", getUserName(&loginMap, strings.Split(Content, ":<br/>")[0]), " 发了一个表情")
 				} else if MsgType == 48 { //位置消息
 
 				} else if MsgType == 49 { //分享链接
@@ -368,8 +375,7 @@ func LoadImage(path string) (img image.Image, err error) {
 	return
 }
 
-//退出系统
-func QuitSystem() {
+func KeyControl() {
 	c := make(chan os.Signal)                                                          //创建监听退出chan
 	signal.Notify(c, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT) //监听指定信号 ctrl+c kill
 	go func() {
@@ -377,15 +383,20 @@ func QuitSystem() {
 			switch s {
 			case syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT:
 				Log(logging.INFO, "请求退出系统", s.String())
-				os.Remove(QRFile) //删除二维码文件
-				logFile.Close()   //关闭日志文件
-				Log(logging.INFO, "处理完毕,退出系统\n\n")
-				os.Exit(0)
+				ExitSystem()
 			default:
 				Log(logging.INFO, s.String())
 			}
 		}
 	}()
+}
+
+//退出系统
+func ExitSystem() {
+	os.Remove(QRFile) //删除二维码文件
+	logFile.Close()   //关闭日志文件
+	Log(logging.INFO, "处理完毕,退出系统\n\n")
+	os.Exit(0)
 }
 
 //日志初始化
@@ -446,6 +457,7 @@ func CommandControl(loginMap *m.LoginMap, contactMap map[string]m.User) {
 	case MeChatString := <-chatString:
 		if strings.ToUpper(MeChatString) == "U" { // 列出用户
 			Log(logging.INFO, "列出用户.")
+
 			for i, n := range contactMap {
 				if strings.HasPrefix(i, "@@") == true { //先列出群
 					Log(logging.INFO, fmt.Sprintf("%s %-30s", i[:5], FilterName(n.NickName)))
@@ -456,6 +468,11 @@ func CommandControl(loginMap *m.LoginMap, contactMap map[string]m.User) {
 					Log(logging.INFO, fmt.Sprintf("%s %-30s %s %s %s", i[:5], FilterName(n.NickName), tools.Iif(n.Sex == 1, "男", "女"), n.Province, n.City))
 				}
 			}
+
+			for i, n := range UserInfoList {
+				Log(logging.INFO, fmt.Sprintf("%s %-30s", i[:5], n))
+			}
+			break
 		} else if strings.ToUpper(MeChatString) == "QUIT" { // 退出系统
 			Log(logging.INFO, "系统退出.")
 			close(chatString)
@@ -463,6 +480,14 @@ func CommandControl(loginMap *m.LoginMap, contactMap map[string]m.User) {
 		} else if strings.HasPrefix(MeChatString, "@") { //指定发送人
 			if MeChatString[5:6] == ":" {
 				for i, _ := range contactMap {
+					if strings.HasPrefix(i[:5], MeChatString[0:5]) {
+						MeToUser = i
+						em := Chat(loginMap, 1, loginMap.SelfUserName, MeToUser, MeChatString[6:])
+						Log(logging.INFO, fmt.Sprintf("我发给%s的消息：%s", getUserName(loginMap, MeToUser), em))
+						break
+					}
+				}
+				for i, _ := range UserInfoList {
 					if strings.HasPrefix(i[:5], MeChatString[0:5]) {
 						MeToUser = i
 						em := Chat(loginMap, 1, loginMap.SelfUserName, MeToUser, MeChatString[6:])
@@ -493,4 +518,24 @@ func CheckAI(con string) (ret string) {
 		ret = "程序放假中..."
 	}
 	return
+}
+
+func commandLineDisplay() {
+	var r uint32
+	src, err := LoadImage(QRFile)
+	panicErr(false, err)
+	// 缩略图的大小
+	dst := resize.Resize(120, 235, src, resize.Lanczos2)
+	for i := 5; i < 115; i++ {
+		for n := 5; n < 230; n++ {
+			r, _, _, _ = dst.At(i, n).RGBA()
+
+			if r > 50000 {
+				fmt.Print("█")
+			} else {
+				fmt.Print(" ")
+			}
+		}
+		fmt.Print("\n")
+	}
 }

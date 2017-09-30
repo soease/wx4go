@@ -157,7 +157,6 @@ type Contact struct {
 	StarFriend       int                  `json:"StarFriend"`
 	AppAccountFlag   int                  `json:"AppAccountFlag"`
 	Statues          int                  `json:"Statues"`
-	AttrStatus       int64                `json:"AttrStatus"`
 	Province         string               `json:"Province"`
 	City             string               `json:"City"`
 	Alias            string               `json:"Alias"`
@@ -168,6 +167,7 @@ type Contact struct {
 	KeyWord          string               `json:"KeyWord"`
 	EncryChatRoomId  string               `json:"EncryChatRoomId"`
 	IsOwner          int                  `json:"IsOwner"`
+	//AttrStatus       int64                `json:"AttrStatus"`
 }
 
 //当获取群组信息时，会附加群内的用户信息
