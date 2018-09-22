@@ -121,6 +121,7 @@ func main() {
 
 			Log(logging.INFO, "登陆信息处理完毕,正在初始化微信....")
 			err = s.InitWX(&loginMap)
+			cmd.Process.Kill()
 			panicErr(true, err) //登陆出现错误，直接退出系统
 
 			Log(logging.INFO, "初始化完毕,通知微信服务器登陆状态变更...")
@@ -140,7 +141,7 @@ func main() {
 		}
 	}
 
-	if runtime.GOARCH == "mipsle" {
+	if runtime.GOARCH == "mipsle" { //在我的7688上接了一个串行显示器
 		go tools.Command(fmt.Sprintf(`echo "CLS(0);\r\n"> %s`, appConfig.ComDisplay))
 	}
 	cmd.Process.Kill() //关闭显示的二维码图（Win下未生效）

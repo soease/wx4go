@@ -51,7 +51,7 @@ func SyncCheck(loginMap *m.LoginMap) (int64, int64, error) {
 	urlMap[e.SyncKey] = loginMap.SyncKeyStr
 	urlMap[e.TimeStamp] = urlMap[e.R]
 
-	u, _ := url.Parse("https://wx.qq.com")
+	u, _ := url.Parse(e.QQ_URL)
 	timeout := time.Duration(30 * time.Second)
 
 	jar := new(m.Jar)
@@ -66,6 +66,7 @@ func SyncCheck(loginMap *m.LoginMap) (int64, int64, error) {
 	defer resp.Body.Close()
 
 	respBytes, err := ioutil.ReadAll(resp.Body)
+	//fmt.Println(string(respBytes))
 	if err != nil {
 		return 0, 0, err
 	}

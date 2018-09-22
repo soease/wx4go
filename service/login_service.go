@@ -195,7 +195,7 @@ func InitWX(loginMap *m.LoginMap) error {
 	//fmt.Println(string(bodyBytes))
 	if initInfo.SyncKeys.Count < 1 {
 		if initInfo.BaseRet.Ret == 1100 {
-			return errors.New("登陆失败")
+			return errors.New("登陆失败.请修改环境变量QQ为2再试")
 		} else {
 			return errors.New("微信返回的数据有误")
 		}
