@@ -23,6 +23,7 @@ import (
 	"github.com/widuu/goini"
 	"image"
 	"image/jpeg"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -42,6 +43,8 @@ var (
 	MeToUser     string //主动发送信息到用户
 	log          = logging.MustGetLogger("example")
 	UserInfoList = make(map[string]string) //把用户信息存起来
+	contactMap   map[string]m.User
+	loginMap     m.LoginMap
 )
 
 type AppConfig struct { //配置
@@ -53,6 +56,7 @@ type AppConfig struct { //配置
 	ComDisplay                 string //串口屏位置
 	FilterKey                  string //屏蔽关键词
 	ChatAt                     string //聊天对象
+	WebPort                    string //通过Web扫码
 }
 
 //读取配置文件
@@ -65,18 +69,16 @@ func init() {
 
 func main() {
 	var (
-		cmd          *exec.Cmd
 		Message      string
 		UserNickName string
 		EchoMessage  string
-		loginMap     m.LoginMap
-		contactMap   map[string]m.User
 		ToUserName   string
 		FromUserName string
-		MsgType      int                                    //信息类型
-		Content      string                                 //信息内容
-		retcode      int64                                  //微信信息反馈
-		selector     int64                                  //微信信息反馈
+		MsgType      int    //信息类型
+		Content      string //信息内容
+		retcode      int64  //微信信息反馈
+		selector     int64  //微信信息反馈
+		uName        string
 		FunUser      = make(map[string]string)              //进入调戏模式用户
 		regAt        = regexp.MustCompile(appConfig.ChatAt) // 群聊时其他人说话时会在前面加上@XXX
 		regGroup     = regexp.MustCompile(`^@@.+`)
@@ -85,66 +87,7 @@ func main() {
 
 	Log(logging.INFO, "系统启动中,运行环境:", runtime.GOOS, runtime.GOARCH)
 
-	// 从微信服务器获取UUID  ------------------------------------------------------
-	uuid, err := s.GetUUIDFromWX()
-	panicErr(false, err)
-
-	Log(logging.INFO, "获取二维码...")
-	QRFile, err = s.DownloadImagIntoDir(e.QRCODE_URL + uuid) // 根据UUID获取二维码
-	panicErr(false, err)
-
-	Log(logging.INFO, "显示二维码...")
-	if runtime.GOOS == "linux" {
-		if runtime.GOARCH == "mipsle" { // 在MT7688中运行
-			ComDisplayQRCode(appConfig.ComDisplay)
-			cmd = exec.Command("echo") //没有实际用途，仅是为了统一处理后面的Kill
-		} else if runtime.GOARCH == "arm" {
-			commandLineDisplay()
-			cmd = exec.Command("echo")
-		} else { // 在普通的Linux环境下运行
-			cmd = exec.Command("eog", QRFile)
-		}
-	} else if runtime.GOOS == "windows" { // 在windows环境中运行
-		cmd = exec.Command("cmd", "/c start "+QRFile)
-	}
-	cmd.Start()
-
-	// 轮询服务器判断二维码是否扫过暨是否登陆  ----------------------------------------
-	for {
-		Log(logging.NOTICE, "正在验证登陆...")
-		status, msg := s.CheckLogin(uuid)
-
-		if status == 200 {
-			Log(logging.INFO, "登陆成功,处理登陆信息...")
-			loginMap, err = s.ProcessLoginInfo(msg)
-			panicErr(false, err)
-
-			Log(logging.INFO, "登陆信息处理完毕,正在初始化微信....")
-			err = s.InitWX(&loginMap)
-			cmd.Process.Kill()
-			panicErr(true, err) //登陆出现错误，直接退出系统
-
-			Log(logging.INFO, "初始化完毕,通知微信服务器登陆状态变更...")
-			err = s.NotifyStatus(&loginMap)
-			panicErr(false, err)
-
-			Log(logging.INFO, "通知完毕.")
-			Log(logging.DEBUG, e.SKey, ": ", loginMap.BaseRequest.SKey)
-			Log(logging.DEBUG, e.PassTicket, ": ", loginMap.PassTicket)
-			break
-		} else if status == 201 {
-			Log(logging.NOTICE, "请在手机上确认")
-		} else if status == 408 {
-			Log(logging.NOTICE, "请扫描二维码")
-		} else {
-			Log(logging.ERROR, msg)
-		}
-	}
-
-	if runtime.GOARCH == "mipsle" { //在我的7688上接了一个串行显示器
-		go tools.Command(fmt.Sprintf(`echo "CLS(0);\r\n"> %s`, appConfig.ComDisplay))
-	}
-	cmd.Process.Kill() //关闭显示的二维码图（Win下未生效）
+	loginMap = ScanCodeLogin()
 
 	// 扫码成功 ----------------------------------------------
 	Log(logging.INFO, "开始获取联系人信息...")
@@ -172,10 +115,10 @@ func main() {
 			printErr(err)
 
 			for i := 0; i < wxRecvMsges.MsgCount; i++ {
-				ToUserName = wxRecvMsges.MsgList[i].ToUserName     //接收人
-				FromUserName = wxRecvMsges.MsgList[i].FromUserName //发送人
-				MsgType = wxRecvMsges.MsgList[i].MsgType           //信息类型
-				Content = wxRecvMsges.MsgList[i].Content           //内容
+				ToUserName = wxRecvMsges.MsgList[i].ToUserName          //接收人
+				FromUserName = wxRecvMsges.MsgList[i].FromUserName      //发送人
+				MsgType = wxRecvMsges.MsgList[i].MsgType                //信息类型
+				Content = ContentFilter(wxRecvMsges.MsgList[i].Content) //内容
 
 				if regGroup.MatchString(FromUserName) { //是否在群中
 					UserNickName, Message = getMessage(&loginMap, Content, FromUserName)
@@ -185,10 +128,13 @@ func main() {
 				if MsgType == 1 { // 普通文本消息
 					_, ok := contactMap[FromUserName]
 					if ok {
-						Log(logging.INFO, contactMap[FromUserName].NickName, ":", Message)
+						uName = contactMap[FromUserName].NickName
 					} else {
-						Log(logging.INFO, getUserName(&loginMap, FromUserName), ":", Message)
+						uName = getUserName(&loginMap, FromUserName)
 					}
+
+					go Say(uName + "发消息: " + Message) //自动发音
+					Log(logging.INFO, uName, ":", Message)
 
 					if regGroup.MatchString(wxRecvMsges.MsgList[i].FromUserName) && regAt.MatchString(Content) { // 有人在群里@我，发个消息回答一下
 						EchoMessage = Chat(&loginMap, 1, ToUserName, FromUserName, appConfig.AutoReplay_PrivateChat)
@@ -424,6 +370,7 @@ func confInit() {
 	appConfig.ComDisplay = conf.GetValue("chat", "ComDisplay")
 	appConfig.FilterKey = conf.GetValue("chat", "FilterKey")
 	appConfig.ChatAt = conf.GetValue("chat", "ChatAt")
+	appConfig.WebPort = conf.GetValue("chat", "WebPort")
 }
 
 //通过串口屏显示二维码
@@ -521,7 +468,7 @@ func CheckAI(con string) (ret string) {
 	return
 }
 
-func commandLineDisplay() {
+func CommandLineDisplayQRCode() {
 	var r uint32
 	src, err := LoadImage(QRFile)
 	panicErr(false, err)
@@ -539,4 +486,134 @@ func commandLineDisplay() {
 		}
 		fmt.Print("\n")
 	}
+}
+
+func WebDisplayQRCode(port string) {
+	Log(logging.INFO, "启动Web接口"+port)
+	http.HandleFunc("/", IndexHandler)
+
+	err := http.ListenAndServe(":"+port, nil)
+	panicErr(false, err)
+}
+
+func IndexHandler(w http.ResponseWriter, r *http.Request) {
+	var ret string = "OK"
+	reqUrl := r.URL.Path
+	Log(logging.INFO, reqUrl)
+	if reqUrl == "/favicon.ico" {
+		fmt.Fprintln(w, "")
+		return
+	} else if reqUrl == "/login" {
+		if exists(QRFile) {
+			ret = "<html><head><meta http-equiv='refresh' content='20'></head><img src='" + QRFile + "'/></html>"
+		} else { //不存在二维码，则自动刷新本页等待
+			ret = "<html><head><meta http-equiv='refresh' content='5'></head><body>没有可以扫描的二维码，或已经扫描过了。</body></html>"
+		}
+	} else if strings.HasPrefix(reqUrl, "/pic/") { //访问图片
+		staticfs := http.FileServer(http.Dir("."))
+		staticfs.ServeHTTP(w, r)
+		return
+	} else {
+	}
+
+	fmt.Fprintln(w, ret)
+}
+
+//扫码登陆
+func ScanCodeLogin() (loginMap m.LoginMap) {
+	var cmd *exec.Cmd
+
+	// 从微信服务器获取UUID  ------------------------------------------------------
+	uuid, err := s.GetUUIDFromWX()
+	panicErr(false, err)
+
+	Log(logging.INFO, "获取二维码...")
+	QRFile, err = s.DownloadImagIntoDir(e.QRCODE_URL+uuid, "./pic/qrfile.jpg") // 根据UUID获取二维码
+	panicErr(false, err)
+
+	Log(logging.INFO, "显示二维码...")
+	if appConfig.WebPort != "" { //启动Web接口，优先利用Web扫码登陆
+		go WebDisplayQRCode(appConfig.WebPort)
+		cmd = exec.Command("echo")
+	} else if runtime.GOOS == "linux" {
+		if runtime.GOARCH == "arm" {
+			CommandLineDisplayQRCode() //命令行显示二维码
+			cmd = exec.Command("echo")
+		} else { //在普通的Linux环境下运行
+			cmd = exec.Command("eog", QRFile)
+		}
+	} else if runtime.GOOS == "windows" { //在windows环境中运行
+		cmd = exec.Command("cmd", "/c start "+QRFile)
+	}
+	cmd.Start()
+
+	// 轮询服务器判断二维码是否扫过，即是否登陆  ----------------------------------------
+	for {
+		Log(logging.NOTICE, "正在验证登陆...")
+		status, msg := s.CheckLogin(uuid)
+
+		if status == 200 {
+			Log(logging.INFO, "登陆成功,处理登陆信息...")
+			loginMap, err = s.ProcessLoginInfo(msg)
+			panicErr(false, err)
+
+			Log(logging.INFO, "登陆信息处理完毕,正在初始化微信....")
+			err = s.InitWX(&loginMap)
+			cmd.Process.Kill()
+			panicErr(true, err) //登陆出现错误，直接退出系统
+
+			Log(logging.INFO, "初始化完毕,通知微信服务器登陆状态变更...")
+			err = s.NotifyStatus(&loginMap)
+			panicErr(false, err)
+
+			Log(logging.INFO, "通知完毕.")
+			Log(logging.DEBUG, e.SKey, ": ", loginMap.BaseRequest.SKey)
+			Log(logging.DEBUG, e.PassTicket, ": ", loginMap.PassTicket)
+			break
+		} else if status == 201 {
+			Log(logging.NOTICE, "请在手机上确认")
+		} else if status == 408 {
+			Log(logging.NOTICE, "请扫描二维码")
+		} else {
+			Log(logging.ERROR, msg)
+		}
+	}
+
+	cmd.Process.Kill() //关闭显示的二维码图（Win下未生效）
+	os.Remove(QRFile)
+
+	return
+}
+
+//文件是否存
+func exists(path string) bool {
+	_, err := os.Stat(path)
+	if err == nil {
+		return true
+	}
+	if os.IsNotExist(err) {
+		return false
+	}
+	return true
+}
+
+//过滤消息中的html字符
+func ContentFilter(content string) string {
+	filter := map[string]string{
+		"&lt;": "<",
+		"&gt;": ">",
+		"\"":   "'",
+	}
+	tmp := content
+	for i, n := range filter {
+		tmp = strings.Replace(tmp, i, n, -1)
+	}
+	return tmp
+}
+
+//语音播放
+func Say(content string) {
+	cmdStr := "mplayer -really-quiet 'http://tts.baidu.com/text2audio?lan=zh&ie=UTF-8&spd=5&text=" + content + "'"
+	cmd := exec.Command("/bin/bash", "-c", cmdStr)
+	cmd.Start()
 }

@@ -55,9 +55,14 @@ func GetUUIDFromWX() (string, error) {
 }
 
 /* 下载URL指向的JPG，保存到指定路径下的qrcode.jpg文件 */
-func DownloadImagIntoDir(url string) (string, error) {
+func DownloadImagIntoDir(url string, file string) (string, error) {
 	//检查并创建临时目录
-	filename := TempFileName("", ".jpg")
+	var filename string
+	if file == "" {
+		filename = TempFileName("", ".jpg")
+	} else {
+		filename = file
+	}
 	resp, err := http.Get(url)
 	if err != nil {
 		return "", err
